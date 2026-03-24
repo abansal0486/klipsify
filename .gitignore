@@ -1,0 +1,20 @@
+# Node modules
+node_modules/
+client/node_modules/
+server/node_modules/
+
+# Environment variables
+.env
+.env.local
+
+# GCP service account keys
+gcs-key.json
+*-key.json
+
+# Logs
+logs/
+*.log
+
+# System files
+.DS_Store
+Thumbs.db
