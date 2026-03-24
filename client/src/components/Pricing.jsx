@@ -1,9 +1,59 @@
 import React, { useState } from "react";
 import { FaCheck, FaChevronUp, FaChevronDown } from "react-icons/fa";
+import { useSelector } from "react-redux";
+import { useNavigate } from "react-router-dom";
+import api from "../api/axios";
+import { toast } from "react-toastify";
 
 const Pricing = () => {
   const [selected, setSelected] = useState("monthly");
   const [expandedPlan, setExpandedPlan] = useState(null);
+  const { user } = useSelector((state) => state.auth);
+  const navigate = useNavigate();
+
+  const handleChoosePlan = async (plan) => {
+
+    if (plan.name === "Free Flight") {
+      navigate("/dashboard");
+      return;
+    }
+
+    try {
+      const priceId =
+        selected === "monthly"
+          ? plan.stripePriceIdMonthly
+          : plan.stripePriceIdYearly;
+
+      if (!priceId) {
+        toast.error("Stripe Price ID not configured for this plan.");
+        return;
+      }
+
+      if (!user?.email) {
+        toast.info("Please sign up first to add your email for the session.");
+        // continue anyway to try or show login?
+        // For now, allow trying but warn
+      }
+
+      const { data } = await api.post("/payment/create-checkout-session", {
+        priceId,
+        email: user?.email || "anonymous@example.com", // Fallback for testing
+        userId: user?._id || user?.id || "",
+      });
+
+      if (data && data.url) {
+        window.location.href = data.url;
+      } else {
+        toast.error("Failed to create checkout session");
+      }
+    } catch (error) {
+      console.error("Stripe session error:", error);
+      toast.error(
+        error.response?.data?.message ||
+          "Something went wrong. Please try again.",
+      );
+    }
+  };
 
   const togglePlan = (name) => {
     setExpandedPlan((prev) => (prev === name ? null : name));
@@ -32,6 +82,8 @@ const Pricing = () => {
       ],
       popular: false,
       cta: "Start Free",
+      stripePriceIdMonthly: "", // Free plan usually doesn't need a Stripe Price ID unless you want to track it
+      stripePriceIdYearly: "",
     },
     {
       name: "Air Born",
@@ -55,6 +107,8 @@ const Pricing = () => {
       ],
       popular: true,
       cta: "Choose Plan",
+      stripePriceIdMonthly: "price_1SoOgk2KbptVo2GFXnN3GJpg", // Replace with actual monthly price ID
+      stripePriceIdYearly: "price_1SoOgk2KbptVo2GFXnN3GJpg_yearly", // Replace with actual yearly price ID
     },
     {
       name: "Gladiator",
@@ -78,6 +132,8 @@ const Pricing = () => {
       ],
       popular: false,
       cta: "Choose Plan",
+      stripePriceIdMonthly: "price_1SoOgk2KbptVo2GFXnN3GJpg_gladiator", // Replace with actual monthly price ID
+      stripePriceIdYearly: "price_1SoOgk2KbptVo2GFXnN3GJpg_gladiator_yearly", // Replace with actual yearly price ID
     },
   ];
 
@@ -126,7 +182,7 @@ const Pricing = () => {
         </div>
 
         <div className="bg-white/30 backdrop-blur-sm rounded-3xl p-4 md:p-8 mb-8 shadow-lg">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-10 items-stretch">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-10 items-start">
             {allPlans.map((plan) => (
               <div
                 key={plan.name}
@@ -287,7 +343,10 @@ const Pricing = () => {
                     </div>
                   </div>
 
-                  <button className="w-full py-2.5 md:py-3 px-8 rounded-full text-xs md:text-base font-bold transition-all duration-200 mt-4 tracking-wider cursor-pointer bg-gradient-to-r from-[#F472B6] to-[#A855F7] text-white shadow-lg shadow-pink-200/20 active:scale-95">
+                  <button
+                    onClick={() => handleChoosePlan(plan)}
+                    className="w-full py-2.5 md:py-3 px-8 rounded-full text-xs md:text-base font-bold transition-all duration-200 mt-4 tracking-wider cursor-pointer bg-gradient-to-r from-[#F472B6] to-[#A855F7] text-white shadow-lg shadow-pink-200/20 active:scale-95"
+                  >
                     {plan.cta}
                   </button>
                 </div>

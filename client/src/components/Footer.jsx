@@ -5,7 +5,7 @@ import instagram from "../assets/flowbite_instagram-solid.svg";
 import linkedin from "../assets/devicon-plain_linkedin.svg";
 import youtube from "../assets/Vector (2).svg";
 
-const Footer = () => {
+const Footer = ({ onContactClick }) => {
     return (
         <footer className="bg-white pt-3 md:pt-0 pb-11 px-2 ">
             <div className="max-w-[1140px] mx-auto flex flex-col md:mt-[50px] items-center">
@@ -46,7 +46,7 @@ const Footer = () => {
                     <div className="flex space-x-6">
                         <a href="#privacy" className="hover:text-black text-[10px] md:text-[14px] transition-colors">Privacy</a>
                         <a href="#terms" className="hover:text-black text-[10px] md:text-[14px] transition-colors">Terms</a>
-                        <a href="#contact" className="hover:text-black text-[10px] md:text-[14px] transition-colors">Contact</a>
+                        <a href="#contact" className="hover:text-black text-[10px] md:text-[14px] transition-colors" onClick={onContactClick}>Contact</a>
                     </div>
                 </div>
             </div>
