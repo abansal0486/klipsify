@@ -19,7 +19,7 @@ const HomePage = () => {
       <RatingSection />
       <AboutFeatures />
       <Pricing />
-      <Footer />
+      <Footer onContactClick={() => setIsContactOpen(true)} />
 
       <ContactUs
         isOpen={isContactOpen}
