@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import React from "react";
 import { createPortal } from "react-dom";
 import ProductInput from "./ProductInput";
 import IndustryInput from "./IndustryInput";
@@ -12,13 +13,26 @@ export default function CreateBrandDrawer({ close, onCreate }) {
   const logoInputRef = useRef(null);
 
   const updateField = (field, value) => setBrand((b) => ({ ...b, [field]: value }));
+  const [logoPreview, setLogoPreview] = useState(null);
+
+  React.useEffect(() => {
+    if (brand.logo instanceof File) {
+      const url = URL.createObjectURL(brand.logo);
+      setLogoPreview(url);
+      return () => URL.revokeObjectURL(url);
+    } else {
+      setLogoPreview(null);
+    }
+  }, [brand.logo]);
   const addProduct  = () => updateField("products", [...brand.products, { name: "", description: "", image: null }]);
   const removeProduct = (idx) =>
     updateField("products", brand.products.filter((_, i) => i !== idx));
 
   const handleLogoUpload = (e) => {
     const file = e.target.files[0];
-    if (file) updateField("logo", URL.createObjectURL(file));
+    if (file) {
+      updateField("logo", file); // Store the actual file object
+    }
     e.target.value = "";
   };
 
@@ -65,8 +79,8 @@ export default function CreateBrandDrawer({ close, onCreate }) {
         {/* ── BRAND PREVIEW CARD ── */}
         <div className="mx-6 mt-5 rounded-2xl bg-gradient-to-br from-purple-50 to-pink-50 border border-purple-100 p-4 flex items-center gap-4">
           <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center text-white text-sm font-extrabold shadow-md flex-shrink-0 transition-all duration-300 overflow-hidden`}>
-            {brand.logo
-              ? <img src={brand.logo} alt="logo" className="w-full h-full object-contain p-1" />
+            {logoPreview
+              ? <img src={logoPreview} alt="logo" className="w-full h-full object-contain p-1" />
               : initials
             }
           </div>
@@ -89,10 +103,10 @@ export default function CreateBrandDrawer({ close, onCreate }) {
           {/* Logo upload */}
           <Field label="Brand Logo" icon={<ImagePlus size={13} />}>
             <input ref={logoInputRef} type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
-            {brand.logo ? (
+            {logoPreview ? (
               <div className="flex items-center gap-3 p-3 rounded-xl border border-gray-200 bg-gray-50">
                 <div className="w-12 h-12 rounded-xl border border-gray-200 bg-white flex items-center justify-center overflow-hidden flex-shrink-0 shadow-sm">
-                  <img src={brand.logo} alt="logo" className="w-full h-full object-contain p-1" />
+                  <img src={logoPreview} alt="logo" className="w-full h-full object-contain p-1" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-semibold text-gray-700">Logo uploaded</p>

@@ -3,6 +3,9 @@ import CreateBrandDrawer from "../../components/CreateBrandDrawer";
 import EditBrandDrawer from "../../components/EditBrandDrawer";
 import ProductGalleryDrawer from "../../components/ProductGalleryDrawer";
 import { Sparkles, Plus, Turntable, Building2, Pencil } from "lucide-react";
+import { useDispatch, useSelector } from "react-redux";
+import { createProject, fetchProjects } from "../../redux/actions/projectAction";
+import { useEffect } from "react";
 
 const dummyBrands = [
   {
@@ -45,20 +48,74 @@ const dummyBrands = [
 ];
 
 export default function BrandManager() {
-  const [brands, setBrands]               = useState(dummyBrands);
-  const [openDrawer, setOpenDrawer]       = useState(false);
+  const dispatch = useDispatch();
+  const { projects, loading } = useSelector((state) => state.project);
+  const [openDrawer, setOpenDrawer] = useState(false);
   const [selectedBrand, setSelectedBrand] = useState(null);
-  const [editingBrand, setEditingBrand]   = useState(null);
+  const [editingBrand, setEditingBrand] = useState(null);
 
-  const addBrand = (brand) => { setBrands((prev) => [...prev, brand]); setOpenDrawer(false); };
+  useEffect(() => {
+    dispatch(fetchProjects());
+  }, [dispatch]);
+
+  const API_URL = process.env.REACT_APP_API_URL || "http://localhost:3002";
+
+  // Map backend projects to UI structure
+  const brands = (projects || []).map((p) => ({
+    id: p._id,
+    name: p.brandName || p.projectName,
+    industry: p.industry || p.niche,
+    slogan: p.slogan,
+    description: p.description,
+    logo: p.logoUrl ? `${API_URL}/${p.logoUrl}` : null,
+    products: (p.products || []).map((prod) => ({
+      name: prod.productName,
+      image: prod.productImage ? `${API_URL}/${prod.productImage}` : null,
+    })),
+  }));
+
+  const addBrand = async (brandData) => {
+    try {
+      const formData = new FormData();
+      formData.append("projectName", brandData.name);
+      formData.append("brandName", brandData.name);
+      formData.append("industry", brandData.industry);
+      formData.append("niche", brandData.industry);
+      formData.append("description", brandData.description);
+      formData.append("slogan", brandData.slogan);
+
+      if (brandData.logo) {
+        formData.append("logo", brandData.logo);
+      }
+
+      const productsWithNames = brandData.products.map((p, i) => {
+        if (p.image) {
+          formData.append("mediaFiles", p.image);
+        }
+        return {
+          productName: p.name,
+          productImage: "", // Backend will sync these with mediaFiles
+        };
+      });
+
+      formData.append("products", JSON.stringify(productsWithNames));
+
+      await dispatch(createProject(formData));
+      setOpenDrawer(false);
+    } catch (error) {
+      console.error("Failed to create brand project:", error);
+    }
+  };
 
   const updateBrand = (updated) => {
-    setBrands((prev) => prev.map((b) => b.name === editingBrand.name ? updated : b));
+    setEditingBrand((prev) =>
+      prev.map((b) => (b.name === editingBrand.name ? updated : b))
+    );
     setEditingBrand(null);
   };
 
   const deleteBrand = () => {
-    setBrands((prev) => prev.filter((b) => b.name !== editingBrand.name));
+    setEditingBrand((prev) => prev.filter((b) => b.name !== editingBrand.name));
     setEditingBrand(null);
   };
 
@@ -105,8 +162,12 @@ export default function BrandManager() {
       <div className="h-px bg-gradient-to-r from-transparent via-purple-200 to-transparent mx-6" />
 
       {/* ── GRID ── */}
-      <div className="px-6 py-6">
-        {brands.length === 0 ? (
+      <div className="px-6 py-6 font-geist">
+        {loading ? (
+          <div className="flex h-64 items-center justify-center">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-solid border-purple-500 border-t-transparent"></div>
+          </div>
+        ) : brands.length === 0 ? (
           <EmptyState onCreateClick={() => setOpenDrawer(true)} />
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
