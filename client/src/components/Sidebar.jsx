@@ -1,4 +1,4 @@
-import { Home, Sparkles, Gem, Turntable, Settings, LogOut } from "lucide-react";
+import { Home, Sparkles, Gem, Turntable, LogOut } from "lucide-react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { logoutUser } from "../redux/actions/authAction";
@@ -32,28 +32,29 @@ export default function Sidebar() {
       <div className="flex flex-col items-center gap-1 w-full px-3">
 
         <SidebarButton
-          icon={<Settings size={18} />}
-          label="Settings"
-          onClick={() => navigate("/dashboard/profile")}
-        />
-
-        <SidebarButton
           icon={<LogOut size={18} />}
           label="Logout"
           danger
           onClick={() => dispatch(logoutUser())}
         />
 
-        {/* ── AVATAR ── */}
+        {/* ── AVATAR / SETTINGS ── */}
         <button
           onClick={() => navigate("/dashboard/profile")}
-          className="mt-2 w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 to-pink-500
+          title={user?.name || user?.email || "Profile"}
+          className="group flex flex-col items-center justify-center w-full py-2.5 rounded-xl border border-transparent
+            hover:bg-purple-50 hover:border-purple-100 transition-all duration-200"
+        >
+          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 to-pink-500
             flex items-center justify-center text-white text-sm font-bold
             ring-2 ring-offset-2 ring-offset-white ring-transparent
-            hover:ring-purple-400 transition-all duration-200 shadow-md shadow-purple-200"
-          title={user?.name || user?.email || "Profile"}
-        >
-          {initial}
+            group-hover:ring-purple-400 transition-all duration-200 shadow-md shadow-purple-200"
+          >
+            {initial}
+          </div>
+          <span className="text-[9px] font-bold mt-1 tracking-wide text-gray-400 group-hover:text-purple-500 transition-colors duration-200">
+            Profile
+          </span>
         </button>
 
       </div>

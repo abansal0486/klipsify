@@ -1,128 +1,163 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { toast } from "react-toastify";
+import { useDispatch, useSelector } from "react-redux";
+import { Sparkles, Plus, Turntable, Building2, Pencil } from "lucide-react";
+
 import CreateBrandDrawer from "../../components/CreateBrandDrawer";
 import EditBrandDrawer from "../../components/EditBrandDrawer";
 import ProductGalleryDrawer from "../../components/ProductGalleryDrawer";
-import { Sparkles, Plus, Turntable, Building2, Pencil } from "lucide-react";
-import { useDispatch, useSelector } from "react-redux";
-import { createProject, fetchProjects } from "../../redux/actions/projectAction";
-import { useEffect } from "react";
 
-const dummyBrands = [
-  {
-    name: "NovaTech",
-    industry: "Technology",
-    slogan: "Innovate the Future",
-    description: "Next generation smart devices",
-    logo: null,
-    products: [
-      { name: "Nova Laptop Pro",     image: "https://images.unsplash.com/photo-1517336714731-489689fd1ca8" },
-      { name: "Nova Wireless Mouse", image: "https://images.unsplash.com/photo-1587829741301-dc798b83add3" },
-      { name: "Nova Smart Monitor",  image: "https://images.unsplash.com/photo-1527443224154-c4a3942d3acf" },
-      { name: "Nova Laptop Pro",     image: "https://images.unsplash.com/photo-1517336714731-489689fd1ca8" },
-      { name: "Nova Wireless Mouse", image: "https://images.unsplash.com/photo-1587829741301-dc798b83add3" },
-      { name: "Nova Smart Monitor",  image: "https://images.unsplash.com/photo-1527443224154-c4a3942d3acf" },
-    ],
-  },
-  {
-    name: "GlowSkin",
-    industry: "Beauty",
-    slogan: "Glow Naturally",
-    description: "Premium skincare products",
-    logo: null,
-    products: [
-      { name: "Vitamin C Serum",      image: "https://images.unsplash.com/photo-1600185365926-3a2ce3cdb9eb" },
-      { name: "Hydrating Face Cream", image: "https://images.unsplash.com/photo-1611930022073-b7a4ba5fcccd" },
-    ],
-  },
-  {
-    name: "UrbanFit",
-    industry: "Fitness",
-    slogan: "Train Smart",
-    description: "Modern fitness gear",
-    logo: null,
-    products: [
-      { name: "Smart Fitness Watch", image: "https://images.unsplash.com/photo-1516574187841-cb9cc2ca948b" },
-      { name: "Training Shoes",      image: "https://images.unsplash.com/photo-1542291026-7eec264c27ff" },
-    ],
-  },
-];
+import {
+  fetchBrands,
+  createBrand,
+  updateBrand,
+  deleteBrand,
+  addProduct,
+  updateProduct,
+  deleteProduct,
+} from "../../redux/actions/brandAction";
+
+const API_URL = process.env.REACT_APP_API_URL || "http://localhost:3002";
+
+// Map a raw backend brand + its products to the UI shape
+function mapBrand(b) {
+  return {
+    id: b._id,
+    name: b.brandName,
+    industry: b.industry || "",
+    slogan: b.slogan || "",
+    description: b.description || "",
+    logo: b.logoViewUrl ? `${API_URL}/${b.logoViewUrl}` : null,
+    products: (b.products || []).map((p) => ({
+      id: p._id,
+      name: p.productName,
+      description: p.description || "",
+      image: p.productImage ? `${API_URL}/${p.productImage}` : null,
+    })),
+  };
+}
 
 export default function BrandManager() {
   const dispatch = useDispatch();
-  const { projects, loading } = useSelector((state) => state.project);
-  const [openDrawer, setOpenDrawer] = useState(false);
+  const { brands: rawBrands, loading } = useSelector((state) => state.brand);
+
+  const [openDrawer, setOpenDrawer]     = useState(false);
   const [selectedBrand, setSelectedBrand] = useState(null);
-  const [editingBrand, setEditingBrand] = useState(null);
+  const [editingBrand, setEditingBrand]   = useState(null);
 
-  useEffect(() => {
-    dispatch(fetchProjects());
-  }, [dispatch]);
+  useEffect(() => { dispatch(fetchBrands()); }, [dispatch]);
 
-  const API_URL = process.env.REACT_APP_API_URL || "http://localhost:3002";
+  const brands = (rawBrands || []).map(mapBrand);
 
-  // Map backend projects to UI structure
-  const brands = (projects || []).map((p) => ({
-    id: p._id,
-    name: p.brandName || p.projectName,
-    industry: p.industry || p.niche,
-    slogan: p.slogan,
-    description: p.description,
-    logo: p.logoUrl ? `${API_URL}/${p.logoUrl}` : null,
-    products: (p.products || []).map((prod) => ({
-      name: prod.productName,
-      image: prod.productImage ? `${API_URL}/${prod.productImage}` : null,
-    })),
-  }));
+  // ── create ────────────────────────────────────────────────────────────────
 
-  const addBrand = async (brandData) => {
+  const handleCreate = async (brandData) => {
+    if (!brandData.name?.trim()) {
+      toast.error("Brand name is required");
+      return;
+    }
     try {
-      const formData = new FormData();
-      formData.append("projectName", brandData.name);
-      formData.append("brandName", brandData.name);
-      formData.append("industry", brandData.industry);
-      formData.append("niche", brandData.industry);
-      formData.append("description", brandData.description);
-      formData.append("slogan", brandData.slogan);
+      // 1. Create brand (with optional logo)
+      const brandForm = new FormData();
+      brandForm.append("brandName", brandData.name.trim());
+      if (brandData.industry)   brandForm.append("industry",    brandData.industry);
+      if (brandData.description) brandForm.append("description", brandData.description);
+      if (brandData.slogan)     brandForm.append("slogan",      brandData.slogan);
+      if (brandData.logo instanceof File) brandForm.append("logo", brandData.logo);
 
-      if (brandData.logo) {
-        formData.append("logo", brandData.logo);
+      const newBrand = await dispatch(createBrand(brandForm));
+
+      // 2. Add each product sequentially
+      for (const p of brandData.products || []) {
+        if (!p.name?.trim()) continue;
+        const prodForm = new FormData();
+        prodForm.append("productName", p.name.trim());
+        if (p.description) prodForm.append("description", p.description);
+        if (p.image instanceof File) prodForm.append("productImage", p.image);
+        await dispatch(addProduct(newBrand._id, prodForm));
       }
 
-      const productsWithNames = brandData.products.map((p, i) => {
-        if (p.image) {
-          formData.append("mediaFiles", p.image);
-        }
-        return {
-          productName: p.name,
-          productImage: "", // Backend will sync these with mediaFiles
-        };
-      });
-
-      formData.append("products", JSON.stringify(productsWithNames));
-
-      await dispatch(createProject(formData));
       setOpenDrawer(false);
-    } catch (error) {
-      console.error("Failed to create brand project:", error);
+    } catch {
+      // errors already toasted by action
     }
   };
 
-  const updateBrand = (updated) => {
-    setEditingBrand((prev) =>
-      prev.map((b) => (b.name === editingBrand.name ? updated : b))
-    );
-    setEditingBrand(null);
+  // ── update ────────────────────────────────────────────────────────────────
+
+  const handleUpdate = async (updatedBrand) => {
+    const original = editingBrand;
+    try {
+      // 1. Update brand fields + optional new logo
+      const brandForm = new FormData();
+      brandForm.append("brandName",    updatedBrand.name?.trim() || original.name);
+      brandForm.append("industry",     updatedBrand.industry    || "");
+      brandForm.append("description",  updatedBrand.description || "");
+      brandForm.append("slogan",       updatedBrand.slogan      || "");
+      if (updatedBrand.logoFile instanceof File) brandForm.append("logo", updatedBrand.logoFile);
+
+      await dispatch(updateBrand(original.id, brandForm));
+
+      // 2. Delete removed products
+      const updatedIds = new Set((updatedBrand.products || []).map((p) => p.id).filter(Boolean));
+      for (const p of original.products || []) {
+        if (p.id && !updatedIds.has(p.id)) {
+          await dispatch(deleteProduct(original.id, p.id));
+        }
+      }
+
+      // 3. Update existing products (have id — name, description, or image changed)
+      const originalProductMap = Object.fromEntries(
+        (original.products || []).filter((p) => p.id).map((p) => [p.id, p])
+      );
+      for (const p of updatedBrand.products || []) {
+        if (!p.id) continue;
+        const orig = originalProductMap[p.id];
+        const nameChanged  = orig?.name        !== p.name;
+        const descChanged  = orig?.description !== p.description;
+        const imageChanged = p.image instanceof File;
+        if (!nameChanged && !descChanged && !imageChanged) continue;
+
+        const prodForm = new FormData();
+        prodForm.append("productName", p.name?.trim() || orig?.name || "");
+        prodForm.append("description", p.description || "");
+        if (imageChanged) prodForm.append("productImage", p.image);
+        await dispatch(updateProduct(original.id, p.id, prodForm));
+      }
+
+      // 4. Add newly created products (no id)
+      for (const p of updatedBrand.products || []) {
+        if (p.id || !p.name?.trim()) continue;
+        const prodForm = new FormData();
+        prodForm.append("productName", p.name.trim());
+        if (p.description)           prodForm.append("description",  p.description);
+        if (p.image instanceof File) prodForm.append("productImage", p.image);
+        await dispatch(addProduct(original.id, prodForm));
+      }
+
+      setEditingBrand(null);
+    } catch {
+      // errors already toasted by action
+    }
   };
 
-  const deleteBrand = () => {
-    setEditingBrand((prev) => prev.filter((b) => b.name !== editingBrand.name));
-    setEditingBrand(null);
+  // ── delete ────────────────────────────────────────────────────────────────
+
+  const handleDelete = async () => {
+    try {
+      await dispatch(deleteBrand(editingBrand.id));
+      setEditingBrand(null);
+    } catch {
+      // errors already toasted by action
+    }
   };
+
+  // ── render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="min-h-full text-gray-800">
 
-      {/* ── HEADER ── */}
+      {/* HEADER */}
       <div className="px-6 pt-8 pb-6">
         <div className="flex items-start justify-between">
           <div>
@@ -158,35 +193,32 @@ export default function BrandManager() {
         </div>
       </div>
 
-      {/* ── DIVIDER ── */}
       <div className="h-px bg-gradient-to-r from-transparent via-purple-200 to-transparent mx-6" />
 
-      {/* ── GRID ── */}
+      {/* GRID */}
       <div className="px-6 py-6 font-geist">
         {loading ? (
           <div className="flex h-64 items-center justify-center">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-solid border-purple-500 border-t-transparent"></div>
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-solid border-purple-500 border-t-transparent" />
           </div>
         ) : brands.length === 0 ? (
           <EmptyState onCreateClick={() => setOpenDrawer(true)} />
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {brands.map((brand, i) => (
+            {brands.map((brand) => (
               <BrandCard
-                key={i}
+                key={brand.id}
                 brand={brand}
                 onClick={() => setSelectedBrand(brand)}
                 onEdit={(e) => { e.stopPropagation(); setEditingBrand(brand); }}
               />
             ))}
 
-            {/* ── ADD CARD ── */}
             <button
               onClick={() => setOpenDrawer(true)}
               className="group flex flex-col items-center justify-center gap-3 rounded-2xl
                 border-2 border-dashed border-gray-300 hover:border-purple-400
-                bg-white/60 hover:bg-purple-50/60
-                min-h-[220px] transition-all duration-200"
+                bg-white/60 hover:bg-purple-50/60 min-h-[220px] transition-all duration-200"
             >
               <div className="w-10 h-10 rounded-xl bg-gray-100 border border-gray-200 group-hover:bg-purple-100 group-hover:border-purple-300 flex items-center justify-center transition-all duration-200">
                 <Plus size={18} className="text-gray-400 group-hover:text-purple-500 transition-colors duration-200" />
@@ -199,21 +231,25 @@ export default function BrandManager() {
         )}
       </div>
 
-      {openDrawer    && <CreateBrandDrawer close={() => setOpenDrawer(false)} onCreate={addBrand} />}
-      {selectedBrand && <ProductGalleryDrawer brand={selectedBrand} close={() => setSelectedBrand(null)} />}
-      {editingBrand  && (
+      {openDrawer && (
+        <CreateBrandDrawer close={() => setOpenDrawer(false)} onCreate={handleCreate} />
+      )}
+      {selectedBrand && (
+        <ProductGalleryDrawer brand={selectedBrand} close={() => setSelectedBrand(null)} />
+      )}
+      {editingBrand && (
         <EditBrandDrawer
           brand={editingBrand}
           close={() => setEditingBrand(null)}
-          onUpdate={updateBrand}
-          onDelete={deleteBrand}
+          onUpdate={handleUpdate}
+          onDelete={handleDelete}
         />
       )}
     </div>
   );
 }
 
-/* ─────────────── BRAND CARD ─────────────── */
+/* ── brand card ──────────────────────────────────────────────────────────── */
 const cardGradients = [
   "from-purple-500 to-pink-500",
   "from-blue-500 to-purple-500",
@@ -223,8 +259,8 @@ const cardGradients = [
 ];
 
 function BrandCard({ brand, onClick, onEdit }) {
-  const initials = brand.name.slice(0, 2).toUpperCase();
-  const gradient = cardGradients[brand.name.charCodeAt(0) % cardGradients.length];
+  const initials  = brand.name.slice(0, 2).toUpperCase();
+  const gradient  = cardGradients[brand.name.charCodeAt(0) % cardGradients.length];
 
   return (
     <div
@@ -233,15 +269,10 @@ function BrandCard({ brand, onClick, onEdit }) {
         hover:border-purple-300 hover:shadow-lg hover:shadow-purple-100
         transition-all duration-200 overflow-hidden"
     >
-      {/* Product image strip */}
       <div className="relative h-32 grid grid-cols-3 gap-0.5 overflow-hidden bg-gray-100">
         {brand.products.slice(0, 3).map((p, i) => (
           <div key={i} className="relative overflow-hidden">
-            <img
-              src={p.image}
-              alt={p.name}
-              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-            />
+            <img src={p.image} alt={p.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
           </div>
         ))}
         {brand.products.length === 0 && (
@@ -250,8 +281,6 @@ function BrandCard({ brand, onClick, onEdit }) {
           </div>
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-white/80 via-transparent to-transparent" />
-
-        {/* Edit button — top right, visible on hover */}
         <button
           onClick={onEdit}
           className="absolute top-2 right-2 w-7 h-7 rounded-xl bg-white/90 border border-gray-200
@@ -264,7 +293,6 @@ function BrandCard({ brand, onClick, onEdit }) {
         </button>
       </div>
 
-      {/* Info */}
       <div className="p-4">
         <div className="flex items-center gap-3 mb-3">
           <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center text-white text-xs font-extrabold shadow-md flex-shrink-0 overflow-hidden`}>
@@ -278,11 +306,9 @@ function BrandCard({ brand, onClick, onEdit }) {
             <p className="text-[11px] text-gray-400 truncate">{brand.industry}</p>
           </div>
         </div>
-
         {brand.slogan && (
           <p className="text-xs text-gray-500 italic mb-3 line-clamp-1">"{brand.slogan}"</p>
         )}
-
         <div className="flex items-center justify-between">
           <span className="text-[11px] text-gray-400">
             {brand.products.length} product{brand.products.length !== 1 ? "s" : ""}
@@ -296,7 +322,7 @@ function BrandCard({ brand, onClick, onEdit }) {
   );
 }
 
-/* ─────────────── EMPTY STATE ─────────────── */
+/* ── empty state ─────────────────────────────────────────────────────────── */
 function EmptyState({ onCreateClick }) {
   return (
     <div className="flex flex-col items-center justify-center py-24 text-center">

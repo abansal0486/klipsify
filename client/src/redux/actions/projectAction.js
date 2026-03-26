@@ -39,7 +39,7 @@ export const createProject = (payroll) => async (dispatch) => {
 export const fetchProjects = () => async (dispatch) => {
   try {
     dispatch({ type: FETCH_PROJECTS_REQUEST });
-    const { data } = await api.get("/projects/all/user");
+    const { data } = await api.get("/projects");
     dispatch({ type: FETCH_PROJECTS_SUCCESS, payload: data });
     return data;
   } catch (error) {
