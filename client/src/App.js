@@ -35,14 +35,14 @@ function App() {
     <Routes>
       <Route path="/" element={<Home />} />
 
-      <Route
+      {/* <Route
         path="/register"
         element={
           <PublicRoute>
             <Register />
           </PublicRoute>
         }
-      />
+      /> */}
 
       <Route
         path="/login"
