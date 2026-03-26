@@ -4,7 +4,7 @@ import {
   ForbiddenException,
   BadRequestException,
   Inject,
-  Logger
+  Logger,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -19,7 +19,10 @@ import { Gallery, GalleryDocument } from '../video/schema/gallery.schema';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { VertexAI } from '@google-cloud/vertexai';
 import { GoogleAuth } from 'google-auth-library';
-import { ProjectGallery, ProjectGalleryDocument } from './schemas/project-gallery.schema';
+import {
+  ProjectGallery,
+  ProjectGalleryDocument,
+} from './schemas/project-gallery.schema';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
@@ -112,7 +115,6 @@ export class ProjectsService {
 
   private readonly logger = new Logger(ProjectsService.name);
 
-
   // ==================== HELPER METHODS ====================
 
   /**
@@ -171,8 +173,8 @@ export class ProjectsService {
 
     return new Promise((resolve, reject) => {
       stream.on('error', (err) => {
-        console.error('❌ GCS Upload error:', err);
-        reject(new BadRequestException('Failed to upload file to GCS'));
+        console.error('❌ GCS Upload error detailed:', err);
+        reject(new BadRequestException(`Failed to upload file to GCS: ${err.message}`));
       });
 
       stream.on('finish', () => {
@@ -196,7 +198,6 @@ export class ProjectsService {
     if (!token) throw new Error('Failed to obtain GCP access token');
     return token;
   }
-
 
   /**
    * Remove duplicate questions from AI response
@@ -278,13 +279,14 @@ export class ProjectsService {
     );
   }
 
-
   // ==================== PROJECT CRUD ====================
 
   /**
    * Generate weekly content calendar
    */
-  private async generateWeeklyContentCalendar(projectData: any): Promise<string> {
+  private async generateWeeklyContentCalendar(
+    projectData: any,
+  ): Promise<string> {
     const prompt = `You are now a marketing executive of a big marketing agency.
 
 Please create a detailed marketing plan for social postings (videos and images).
@@ -318,7 +320,9 @@ Make a plan and create the marketing calendar by week.`;
       max_tokens: 2000,
     });
 
-    return completion.choices[0]?.message?.content || 'Unable to generate calendar.';
+    return (
+      completion.choices[0]?.message?.content || 'Unable to generate calendar.'
+    );
   }
 
   /**
@@ -350,8 +354,6 @@ Make a plan and create the marketing calendar by week.`;
   //     status: 'active',
   //     lastActivityAt: new Date(),
   //   };
-
-
 
   //   // Upload logo
   //   if (files?.logo && files.logo.length > 0) {
@@ -426,7 +428,7 @@ Make a plan and create the marketing calendar by week.`;
       description: createProjectDto.description,
       audience: createProjectDto.audience,
       slogan: createProjectDto.slogan,
-      products: createProjectDto.products,
+      products: createProjectDto.products || [],
       domain: createProjectDto.domain,
       style: createProjectDto.style,
       wantsWeeklyPlan: this.toBoolean(createProjectDto.wantsWeeklyPlan),
@@ -437,37 +439,18 @@ Make a plan and create the marketing calendar by week.`;
       lastActivityAt: new Date(),
     };
 
-    if (createProjectDto.products && Array.isArray(createProjectDto.products)) {
-      for (const product of createProjectDto.products) {
-        await this.productModel.create({
-          productName: product.productName,
-          productImage: product.productImage,
-        });
-      }
-    }
-
-    const brandData: any = {
-      brandName: createProjectDto.brandName,
-      industry: createProjectDto.industry,
-      description: createProjectDto.description,
-      slogan: createProjectDto.slogan,
-      products: createProjectDto.products,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    }
-
-    await this.brandModel.create(brandData);
-
-
-    // Upload logo
+    // Upload logo first
     if (files?.logo && files.logo.length > 0) {
-      const logoGcsPath = await this.uploadToGCS(files.logo[0], 'project-logos');
+      const logoGcsPath = await this.uploadToGCS(
+        files.logo[0],
+        'project-logos',
+      );
       projectData.logoGcsPath = logoGcsPath;
       projectData.logoUrl = this.generateDownloadUrl(logoGcsPath);
       projectData.logoViewUrl = this.generateViewUrl(logoGcsPath);
     }
 
-    // Upload media files
+    // Upload media files and sync image URLs back to products
     if (files?.mediaFiles && files.mediaFiles.length > 0) {
       const mediaUploadResults: MediaFileUpload[] = [];
 
@@ -490,6 +473,44 @@ Make a plan and create the marketing calendar by week.`;
       }
 
       projectData.mediaFiles = mediaUploadResults;
+
+      // Sync uploaded image URLs back to products that have the "has_image" marker
+      if (Array.isArray(projectData.products)) {
+        let mediaIdx = 0;
+        projectData.products = projectData.products.map((product: any) => {
+          if (product.productImage === 'has_image' && mediaUploadResults[mediaIdx]) {
+            return { ...product, productImage: mediaUploadResults[mediaIdx++].viewUrl };
+          }
+          return { ...product, productImage: product.productImage === 'has_image' ? '' : product.productImage };
+        });
+      }
+    } else if (Array.isArray(projectData.products)) {
+      // No media files uploaded — clear any leftover "has_image" markers
+      projectData.products = projectData.products.map((product: any) => ({
+        ...product,
+        productImage: product.productImage === 'has_image' ? '' : product.productImage,
+      }));
+    }
+
+    // Create Brand document (after file upload so products have correct image URLs)
+    await this.brandModel.create({
+      brandName: createProjectDto.brandName,
+      industry: createProjectDto.industry,
+      description: createProjectDto.description,
+      slogan: createProjectDto.slogan,
+      products: projectData.products,
+    });
+
+    // Create standalone Product documents with correct image URLs
+    if (Array.isArray(projectData.products)) {
+      for (const product of projectData.products) {
+        if (product.productName) {
+          await this.productModel.create({
+            productName: product.productName,
+            productImage: product.productImage || '',
+          });
+        }
+      }
     }
 
     // Generate calendar if needed
@@ -498,9 +519,8 @@ Make a plan and create the marketing calendar by week.`;
       (projectData.videosPerWeek > 0 || projectData.imagesPerWeek > 0)
     ) {
       try {
-        projectData.weeklyContentCalendar = await this.generateWeeklyContentCalendar(
-          projectData,
-        );
+        projectData.weeklyContentCalendar =
+          await this.generateWeeklyContentCalendar(projectData);
       } catch (error) {
         console.error('⚠️ Calendar generation failed:', error);
         projectData.weeklyContentCalendar = null;
@@ -558,7 +578,10 @@ Make a plan and create the marketing calendar by week.`;
     const project = await this.findOne(userId, projectId);
 
     if (files?.logo && files.logo.length > 0) {
-      const logoGcsPath = await this.uploadToGCS(files.logo[0], 'project-logos');
+      const logoGcsPath = await this.uploadToGCS(
+        files.logo[0],
+        'project-logos',
+      );
       updateProjectDto['logoGcsPath'] = logoGcsPath;
       updateProjectDto['logoUrl'] = this.generateDownloadUrl(logoGcsPath);
       updateProjectDto['logoViewUrl'] = this.generateViewUrl(logoGcsPath);
@@ -585,7 +608,10 @@ Make a plan and create the marketing calendar by week.`;
         });
       }
 
-      updateProjectDto['mediaFiles'] = [...(project.mediaFiles || []), ...newMediaFiles];
+      updateProjectDto['mediaFiles'] = [
+        ...(project.mediaFiles || []),
+        ...newMediaFiles,
+      ];
     }
 
     updateProjectDto['lastActivityAt'] = new Date();
@@ -855,15 +881,18 @@ ${storyboardDescription}
     const askingForStoryboardImage =
       lastAssistantMsg.includes('Do you want to generate storyboard image') ||
       lastAssistantMsg.includes('Do you want to generate story board image') ||
-      lastAssistantMsg.match(/generate.*storyboard.*image.*\(Reply Yes or No\)/i);
-
-    if (userMsgLower === 'yes' && askingForStoryboardImage) {
-      const storyboardDescription = this.extractStoryboardFromHistory(
-        conversationHistory,
+      lastAssistantMsg.match(
+        /generate.*storyboard.*image.*\(Reply Yes or No\)/i,
       );
 
+    if (userMsgLower === 'yes' && askingForStoryboardImage) {
+      const storyboardDescription =
+        this.extractStoryboardFromHistory(conversationHistory);
+
       if (!storyboardDescription) {
-        throw new BadRequestException('No storyboard found in conversation history');
+        throw new BadRequestException(
+          'No storyboard found in conversation history',
+        );
       }
 
       const result = await this.generateStoryboardImageWithGemini(
@@ -909,8 +938,12 @@ ${storyboardDescription}
 
     // CHECK 2: User is satisfied with storyboard infographic
     const askingAboutInfographicSatisfaction =
-      lastAssistantMsg.includes('Are you satisfied with this storyboard infographic?') ||
-      lastAssistantMsg.includes('Are you satisfied with this storyboard image?');
+      lastAssistantMsg.includes(
+        'Are you satisfied with this storyboard infographic?',
+      ) ||
+      lastAssistantMsg.includes(
+        'Are you satisfied with this storyboard image?',
+      );
 
     if (userMsgLower === 'yes' && askingAboutInfographicSatisfaction) {
       const responseWithButton = `Great! Your storyboard is ready.\n\n[GENERATE_CONTENT_BUTTON]\n\nClick the button above to generate the final video or image from this storyboard.`;
@@ -948,12 +981,13 @@ ${storyboardDescription}
 
     // CHECK 3: User is NOT satisfied - REGENERATE
     if (userMsgLower === 'no' && askingAboutInfographicSatisfaction) {
-      const storyboardDescription = this.extractStoryboardFromHistory(
-        conversationHistory,
-      );
+      const storyboardDescription =
+        this.extractStoryboardFromHistory(conversationHistory);
 
       if (!storyboardDescription) {
-        throw new BadRequestException('No storyboard found in conversation history');
+        throw new BadRequestException(
+          'No storyboard found in conversation history',
+        );
       }
 
       const improvingMessage = {
@@ -994,7 +1028,10 @@ ${storyboardDescription}
         },
       };
 
-      project.aiConversationLog = [...project.aiConversationLog, newImageMessage];
+      project.aiConversationLog = [
+        ...project.aiConversationLog,
+        newImageMessage,
+      ];
       await project.save();
 
       return {
@@ -1045,7 +1082,7 @@ ${storyboardDescription}
     if (userMsgLower === '__no_weekly_plan__') {
       const noCalendarMessage =
         `No problem! You can still get great results **without a weekly calendar**.\n\n` +
-        `[GENERATE_CONTENT_BUTTON]\n\n`  // 🔥 this line is required;
+        `[GENERATE_CONTENT_BUTTON]\n\n`; // 🔥 this line is required;
 
       const userSpecialMessage = {
         role: 'user' as const,
@@ -1077,7 +1114,6 @@ ${storyboardDescription}
         conversationLength: project.aiConversationLog.length,
       };
     }
-
 
     // Regular OpenAI conversation
     const systemPrompt = `You are a marketing expert for "${project.brandName}".
@@ -1120,7 +1156,10 @@ ${project.weeklyContentCalendar || 'Weekly marketing calendar available.'}
 
     const messages = [
       { role: 'system', content: systemPrompt },
-      ...conversationHistory.map((msg) => ({ role: msg.role, content: msg.content })),
+      ...conversationHistory.map((msg) => ({
+        role: msg.role,
+        content: msg.content,
+      })),
       { role: 'user', content: userMessage },
     ];
 
@@ -1138,15 +1177,22 @@ ${project.weeklyContentCalendar || 'Weekly marketing calendar available.'}
 
     if (!hasQuestion) {
       if (userMsgLower.match(/^\d+$/)) {
-        aiResponse += '\n\nAre you satisfied with this content? (Reply Yes or No)';
+        aiResponse +=
+          '\n\nAre you satisfied with this content? (Reply Yes or No)';
       } else if (userMsgLower === 'no') {
-        if (lastAssistantMsg.includes('Would you like me to create an 8-second storyboard for this?')) {
+        if (
+          lastAssistantMsg.includes(
+            'Would you like me to create an 8-second storyboard for this?',
+          )
+        ) {
           aiResponse +=
             '\n\nNo problem! You can choose another number from the above list to create a different video or image.';
         } else if (lastAssistantMsg.includes('storyboard')) {
-          aiResponse += '\n\nAre you satisfied with this storyboard? (Reply Yes or No)';
+          aiResponse +=
+            '\n\nAre you satisfied with this storyboard? (Reply Yes or No)';
         } else {
-          aiResponse += '\n\nAre you satisfied with this new content? (Reply Yes or No)';
+          aiResponse +=
+            '\n\nAre you satisfied with this new content? (Reply Yes or No)';
         }
       } else if (userMsgLower === 'yes') {
         if (lastAssistantMsg.includes('satisfied with this content')) {
@@ -1156,7 +1202,8 @@ ${project.weeklyContentCalendar || 'Weekly marketing calendar available.'}
           lastAssistantMsg.includes('8-second storyboard') ||
           lastAssistantMsg.includes('satisfied with this storyboard')
         ) {
-          aiResponse += '\n\nDo you want to generate storyboard image? (Reply Yes or No)';
+          aiResponse +=
+            '\n\nDo you want to generate storyboard image? (Reply Yes or No)';
         }
       } else {
         aiResponse += '\n\nPlease reply Yes, No, or pick a number (1-16)';
@@ -1175,7 +1222,11 @@ ${project.weeklyContentCalendar || 'Weekly marketing calendar available.'}
       timestamp: new Date(),
     };
 
-    project.aiConversationLog = [...conversationHistory, newUserMessage, newAIMessage];
+    project.aiConversationLog = [
+      ...conversationHistory,
+      newUserMessage,
+      newAIMessage,
+    ];
     await project.save();
 
     return {
@@ -1184,7 +1235,6 @@ ${project.weeklyContentCalendar || 'Weekly marketing calendar available.'}
       conversationLength: project.aiConversationLog.length,
     };
   }
-
 
   /**
    * Generate content from storyboard
@@ -1215,8 +1265,12 @@ ${project.weeklyContentCalendar || 'Weekly marketing calendar available.'}
     }
 
     if (options.contentType === 'image') {
-      this.logger.log(`🔍 [DEBUG] Starting image generation for project: ${projectId}`);
-      this.logger.log(`🔍 [DEBUG] Current conversation length: ${project.aiConversationLog?.length || 0}`);
+      this.logger.log(
+        `🔍 [DEBUG] Starting image generation for project: ${projectId}`,
+      );
+      this.logger.log(
+        `🔍 [DEBUG] Current conversation length: ${project.aiConversationLog?.length || 0}`,
+      );
 
       // ✅ Generate unique pending ID
       const pendingId = `img-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -1245,11 +1299,18 @@ This will take approximately **30-60 seconds**.
       }
 
       project.aiConversationLog.push(pendingImageMessage);
-      this.logger.log(`✅ [DEBUG] Added pending image message. New length: ${project.aiConversationLog.length}`);
+      this.logger.log(
+        `✅ [DEBUG] Added pending image message. New length: ${project.aiConversationLog.length}`,
+      );
 
       // ✅ STEP 2: Add calendar message (so user can pick another item)
-      if (project.weeklyContentCalendar && project.weeklyContentCalendar.trim()) {
-        this.logger.log(`✅ [DEBUG] Calendar exists, adding calendar message...`);
+      if (
+        project.weeklyContentCalendar &&
+        project.weeklyContentCalendar.trim()
+      ) {
+        this.logger.log(
+          `✅ [DEBUG] Calendar exists, adding calendar message...`,
+        );
 
         const calendarMessage = {
           role: 'assistant' as const,
@@ -1262,7 +1323,9 @@ This will take approximately **30-60 seconds**.
         };
 
         project.aiConversationLog.push(calendarMessage);
-        this.logger.log(`✅ [DEBUG] Added calendar message. New length: ${project.aiConversationLog.length}`);
+        this.logger.log(
+          `✅ [DEBUG] Added calendar message. New length: ${project.aiConversationLog.length}`,
+        );
       } else {
         this.logger.warn(`⚠️ [DEBUG] No calendar found!`);
       }
@@ -1275,7 +1338,9 @@ This will take approximately **30-60 seconds**.
 
       const savedProject = await project.save();
 
-      this.logger.log(`✅ [DEBUG] Project saved! Final conversation length: ${savedProject.aiConversationLog.length}`);
+      this.logger.log(
+        `✅ [DEBUG] Project saved! Final conversation length: ${savedProject.aiConversationLog.length}`,
+      );
 
       // ✅ STEP 4: Queue image generation
       const job = await this.imageQueue.add(
@@ -1297,7 +1362,9 @@ This will take approximately **30-60 seconds**.
         },
       );
 
-      this.logger.log(`✅ Image queued: Job ${job.id} for project ${projectId}`);
+      this.logger.log(
+        `✅ Image queued: Job ${job.id} for project ${projectId}`,
+      );
       this.logger.log(`✅ Messages saved to DB, user can now see calendar`);
 
       return {
@@ -1310,8 +1377,12 @@ This will take approximately **30-60 seconds**.
         statusCheckUrl: `/projects/${projectId}/job-status/${job.id}`,
       };
     } else {
-      this.logger.log(`🔍 [DEBUG] Starting video generation for project: ${projectId}`);
-      this.logger.log(`🔍 [DEBUG] Current conversation length: ${project.aiConversationLog?.length || 0}`);
+      this.logger.log(
+        `🔍 [DEBUG] Starting video generation for project: ${projectId}`,
+      );
+      this.logger.log(
+        `🔍 [DEBUG] Current conversation length: ${project.aiConversationLog?.length || 0}`,
+      );
 
       // ✅ Generate unique pending ID
       const pendingId = `vid-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -1323,9 +1394,9 @@ This will take approximately **30-60 seconds**.
         timestamp: new Date(),
         metadata: {
           type: 'video-pending',
-          status: 'pending',  // ✅ ADD THIS
+          status: 'pending', // ✅ ADD THIS
           contentType: 'video',
-          pendingId: pendingId,  // ✅ ADD THIS
+          pendingId: pendingId, // ✅ ADD THIS
         },
       };
 
@@ -1335,11 +1406,18 @@ This will take approximately **30-60 seconds**.
       }
 
       project.aiConversationLog.push(generatingMessage);
-      this.logger.log(`✅ [DEBUG] Added generating message. New length: ${project.aiConversationLog.length}`);
+      this.logger.log(
+        `✅ [DEBUG] Added generating message. New length: ${project.aiConversationLog.length}`,
+      );
 
       // ✅ STEP 2: Add calendar message
-      if (project.weeklyContentCalendar && project.weeklyContentCalendar.trim()) {
-        this.logger.log(`✅ [DEBUG] Calendar exists, adding calendar message...`);
+      if (
+        project.weeklyContentCalendar &&
+        project.weeklyContentCalendar.trim()
+      ) {
+        this.logger.log(
+          `✅ [DEBUG] Calendar exists, adding calendar message...`,
+        );
 
         const calendarMessage = {
           role: 'assistant' as const,
@@ -1352,7 +1430,9 @@ This will take approximately **30-60 seconds**.
         };
 
         project.aiConversationLog.push(calendarMessage);
-        this.logger.log(`✅ [DEBUG] Added calendar message. New length: ${project.aiConversationLog.length}`);
+        this.logger.log(
+          `✅ [DEBUG] Added calendar message. New length: ${project.aiConversationLog.length}`,
+        );
       } else {
         this.logger.warn(`⚠️ [DEBUG] No calendar found!`);
       }
@@ -1365,23 +1445,31 @@ This will take approximately **30-60 seconds**.
 
       const savedProject = await project.save();
 
-      this.logger.log(`✅ [DEBUG] Project saved! Final conversation length: ${savedProject.aiConversationLog.length}`);
+      this.logger.log(
+        `✅ [DEBUG] Project saved! Final conversation length: ${savedProject.aiConversationLog.length}`,
+      );
 
       // ✅ Verify it was actually saved
-      const verifyProject = await this.projectModel.findById(projectId).select('aiConversationLog');
+      const verifyProject = await this.projectModel
+        .findById(projectId)
+        .select('aiConversationLog');
 
       // ✅ STEP 4: Queue video generation
-      const job = await this.videoQueue.add('generate-video', {
-        userId,
-        projectId,
-        project: savedProject.toObject(), // ✅ Use saved project
-        options,
-        pendingId
-      }, {
-        attempts: 2,
-        backoff: { type: 'fixed', delay: 10000 },
-        timeout: 300000,
-      });
+      const job = await this.videoQueue.add(
+        'generate-video',
+        {
+          userId,
+          projectId,
+          project: savedProject.toObject(), // ✅ Use saved project
+          options,
+          pendingId,
+        },
+        {
+          attempts: 2,
+          backoff: { type: 'fixed', delay: 10000 },
+          timeout: 300000,
+        },
+      );
 
       this.logger.log(`✅ Video queued: Job ${job.id}`);
       this.logger.log(`✅ Messages saved to DB, user can now see calendar`);
@@ -1391,13 +1479,11 @@ This will take approximately **30-60 seconds**.
         contentType: 'video',
         isPending: true,
         jobId: job.id,
-        pendingId: pendingId,  // ✅ ADD THIS
+        pendingId: pendingId, // ✅ ADD THIS
         message: 'Video generation started! Check the chat.',
         statusCheckUrl: `projects/${projectId}/job-status/${job.id}`,
       };
-
     }
-
   }
 
   /**
@@ -1424,10 +1510,11 @@ This will take approximately **30-60 seconds**.
       messages: [
         {
           role: 'system',
-          content: `You are a prompt optimization expert. Your job is to convert storyboards into SHORT, CLEAR prompts optimized for ${contentType === 'video'
-            ? 'Veo3 video generation (max 150 words)'
-            : 'Imagen 4 ultra image generation (max 100 words)'
-            }.
+          content: `You are a prompt optimization expert. Your job is to convert storyboards into SHORT, CLEAR prompts optimized for ${
+            contentType === 'video'
+              ? 'Veo3 video generation (max 150 words)'
+              : 'Imagen 4 ultra image generation (max 100 words)'
+          }.
 
 For VIDEO prompts, follow these CRITICAL RULES:
 - Focus ONLY on visual descriptions (scenes, actions, lighting, camera movement, composition)
@@ -1443,7 +1530,6 @@ General guidelines:
 - No meta explanations or commentary
 
 Return ONLY the optimized prompt, nothing else.`,
-
         },
         {
           role: 'user',
@@ -1497,7 +1583,10 @@ Return ONLY the optimized prompt, nothing else.`,
   /**
    * Check user file access
    */
-  async checkUserFileAccess(userId: string, filename: string): Promise<boolean> {
+  async checkUserFileAccess(
+    userId: string,
+    filename: string,
+  ): Promise<boolean> {
     // Check project files
     const projects = await this.projectModel.find({
       userId: new Types.ObjectId(userId),
@@ -1527,12 +1616,14 @@ Return ONLY the optimized prompt, nothing else.`,
 
     for (const gallery of galleryEntries) {
       const imageMatch = gallery.imageUrls.some(
-        (item: any) => item.url?.includes(filename) || item.filename === filename,
+        (item: any) =>
+          item.url?.includes(filename) || item.filename === filename,
       );
       if (imageMatch) return true;
 
       const videoMatch = gallery.videoUrls.some(
-        (item: any) => item.url?.includes(filename) || item.filename === filename,
+        (item: any) =>
+          item.url?.includes(filename) || item.filename === filename,
       );
       if (videoMatch) return true;
     }
@@ -1557,13 +1648,13 @@ Return ONLY the optimized prompt, nothing else.`,
   }
 
   /**
- * Get job status - NEW METHOD FOR QUEUE
- */
+   * Get job status - NEW METHOD FOR QUEUE
+   */
   async checkJobStatus(userId: string, projectId: string, jobId: string) {
     const project = await this.projectModel.findOne({
       _id: new Types.ObjectId(projectId),
       userId: new Types.ObjectId(userId),
-      status: { $ne: 'deleted' },  // ✅ Fix #1
+      status: { $ne: 'deleted' }, // ✅ Fix #1
     });
 
     if (!project) {
@@ -1583,9 +1674,11 @@ Return ONLY the optimized prompt, nothing else.`,
     }
 
     const state = await job.getState();
-    const progress = job.progress() || 0;  // ✅ Fix #2
+    const progress = job.progress() || 0; // ✅ Fix #2
 
-    this.logger.log(`📊 Job ${jobId} status: ${state} (progress: ${progress}%)`);
+    this.logger.log(
+      `📊 Job ${jobId} status: ${state} (progress: ${progress}%)`,
+    );
 
     if (state === 'completed') {
       const result = job.returnvalue;
@@ -1597,17 +1690,19 @@ Return ONLY the optimized prompt, nothing else.`,
         status: 'completed',
         contentType: queueType,
         progress: 100,
-        ...(queueType === 'video' ? {
-          videoUrl: result.downloadUrl,
-          viewUrl: result.viewUrl,
-          gcsPath: result.gcsPath,
-          message: 'Video is ready!',
-        } : {
-          imageUrl: result.downloadUrl,
-          viewUrl: result.viewUrl,
-          gcsPath: result.gcsPath,
-          message: 'Image is ready!',
-        }),
+        ...(queueType === 'video'
+          ? {
+              videoUrl: result.downloadUrl,
+              viewUrl: result.viewUrl,
+              gcsPath: result.gcsPath,
+              message: 'Video is ready!',
+            }
+          : {
+              imageUrl: result.downloadUrl,
+              viewUrl: result.viewUrl,
+              gcsPath: result.gcsPath,
+              message: 'Image is ready!',
+            }),
       };
     }
 
@@ -1631,6 +1726,4 @@ Return ONLY the optimized prompt, nothing else.`,
       message: `Processing ${queueType}...${progress > 0 ? ` ${progress}% complete` : ''}`,
     };
   }
-
-
 }

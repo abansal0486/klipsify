@@ -1,7 +1,7 @@
 import { useDispatch, useSelector } from "react-redux";
 import { logoutUser } from "../redux/actions/authAction";
 import { useNavigate } from "react-router-dom";
-import { User, LogOut, CreditCard, Settings } from "lucide-react";
+import { User, LogOut, CreditCard } from "lucide-react";
 
 export default function ProfileDropdown() {
   const dispatch = useDispatch();
@@ -42,7 +42,6 @@ export default function ProfileDropdown() {
       <div className="p-2 space-y-0.5">
         <DropdownItem icon={<User size={14} />}       label="Profile"      onClick={() => navigate("/dashboard/profile")} />
         <DropdownItem icon={<CreditCard size={14} />} label="Subscription" onClick={() => navigate("/dashboard/subscription")} />
-        <DropdownItem icon={<Settings size={14} />}   label="Settings"     onClick={() => navigate("/dashboard/profile")} />
       </div>
 
       <div className="mx-3 h-px bg-gray-100" />

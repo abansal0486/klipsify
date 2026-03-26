@@ -2,11 +2,16 @@ import { useState } from "react";
 import { ImagePlus, X } from "lucide-react";
 
 export default function ProductInput({ index, brand, updateField, onRemove }) {
-  const [preview, setPreview] = useState(null);
+  const product = brand.products[index];
+
+  // initialise preview from existing image URL (string) or null
+  const [preview, setPreview] = useState(
+    typeof product.image === "string" ? product.image : null
+  );
 
   const updateProduct = (field, value) => {
     const products = [...brand.products];
-    products[index][field] = value;
+    products[index] = { ...products[index], [field]: value };
     updateField("products", products);
   };
 
@@ -15,14 +20,14 @@ export default function ProductInput({ index, brand, updateField, onRemove }) {
     if (file) {
       const url = URL.createObjectURL(file);
       setPreview(url);
-      updateProduct("image", url);
+      updateProduct("image", file);
     }
   };
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
 
-      {/* Card header */}
+      {/* header */}
       <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-100">
         <span className="flex items-center gap-2">
           <span className="w-5 h-5 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 text-white text-[10px] font-extrabold flex items-center justify-center">
@@ -40,10 +45,10 @@ export default function ProductInput({ index, brand, updateField, onRemove }) {
         )}
       </div>
 
-      {/* Card body */}
+      {/* body */}
       <div className="p-3 flex gap-3">
 
-        {/* Image upload */}
+        {/* image */}
         <label className="relative w-20 h-20 rounded-xl overflow-hidden flex-shrink-0 cursor-pointer
           bg-gray-50 border-2 border-dashed border-gray-200 hover:border-purple-400 hover:bg-purple-50 transition-all duration-150 group">
           <input type="file" className="hidden" onChange={upload} accept="image/*" />
@@ -57,17 +62,19 @@ export default function ProductInput({ index, brand, updateField, onRemove }) {
           )}
         </label>
 
-        {/* Fields */}
+        {/* fields — controlled so existing values are shown */}
         <div className="flex-1 flex flex-col gap-2 min-w-0">
           <input
             placeholder="Product name"
             className="brand-input !py-2 text-sm"
+            value={product.name || ""}
             onChange={(e) => updateProduct("name", e.target.value)}
           />
           <textarea
             placeholder="Product description (optional)"
             rows={2}
             className="brand-input !py-2 text-sm resize-none"
+            value={product.description || ""}
             onChange={(e) => updateProduct("description", e.target.value)}
           />
         </div>

@@ -1,17 +1,27 @@
 import React, { useState } from "react";
 import { FaCheck, FaChevronUp, FaChevronDown } from "react-icons/fa";
-import { useSelector } from "react-redux";
+import { useSelector, useDispatch } from "react-redux";
 import { useNavigate } from "react-router-dom";
-import api from "../api/axios";
 import { toast } from "react-toastify";
+import { fetchPlans, createCheckoutSession } from "../redux/actions/paymentActions";
 
 const Pricing = () => {
   const [selected, setSelected] = useState("monthly");
   const [expandedPlan, setExpandedPlan] = useState(null);
   const { user } = useSelector((state) => state.auth);
+  const { plans: apiPlans, loading } = useSelector((state) => state.payment);
+  const dispatch = useDispatch();
   const navigate = useNavigate();
 
+  React.useEffect(() => {
+    console.log("Pricing component mounted, fetching plans...");
+    dispatch(fetchPlans());
+  }, [dispatch]);
+
+  console.log("Current API Plans:", apiPlans);
+
   const handleChoosePlan = async (plan) => {
+    console.log("Plan chosen:", plan.name, "Selected period:", selected);
 
     if (plan.name === "Free Flight") {
       navigate("/dashboard");
@@ -19,39 +29,33 @@ const Pricing = () => {
     }
 
     try {
-      const priceId =
-        selected === "monthly"
-          ? plan.stripePriceIdMonthly
-          : plan.stripePriceIdYearly;
+      // Extract priceId from prefetched apiPlans
+      const interval = selected === "monthly" ? "MONTH" : "YEAR";
+      console.log("Searching for interval:", interval, "in apiPlans");
+      const apiPlan = apiPlans.find(
+        (ap) =>
+          ap.displayName.toLowerCase() === plan.name.toLowerCase() &&
+          ap.billingInterval === interval
+      );
+
+      const priceId = apiPlan?.stripePriceId;
 
       if (!priceId) {
-        toast.error("Stripe Price ID not configured for this plan.");
+        toast.error(`Stripe Price ID not found for ${plan.name} (${selected}).`);
         return;
       }
 
       if (!user?.email) {
         toast.info("Please sign up first to add your email for the session.");
-        // continue anyway to try or show login?
-        // For now, allow trying but warn
       }
 
-      const { data } = await api.post("/payment/create-checkout-session", {
-        priceId,
-        email: user?.email || "anonymous@example.com", // Fallback for testing
-        userId: user?._id || user?.id || "",
-      });
+      const email = user?.email || "anonymous@example.com";
+      const userId = user?._id || user?.id || "";
 
-      if (data && data.url) {
-        window.location.href = data.url;
-      } else {
-        toast.error("Failed to create checkout session");
-      }
+      dispatch(createCheckoutSession(priceId, email, userId));
     } catch (error) {
       console.error("Stripe session error:", error);
-      toast.error(
-        error.response?.data?.message ||
-          "Something went wrong. Please try again.",
-      );
+      toast.error("Something went wrong. Please try again.");
     }
   };
 
@@ -86,9 +90,9 @@ const Pricing = () => {
       stripePriceIdYearly: "",
     },
     {
-      name: "Air Born",
+      name: "Airborn",
       monthlyPrice: "$69",
-      yearlyPrice: "$55",
+      yearlyPrice: "$100",
       description: "Unleash your creativity",
       features: [
         { name: "Videos", value: "10" },
@@ -107,13 +111,13 @@ const Pricing = () => {
       ],
       popular: true,
       cta: "Choose Plan",
-      stripePriceIdMonthly: "price_1SoOgk2KbptVo2GFXnN3GJpg", // Replace with actual monthly price ID
-      stripePriceIdYearly: "price_1SoOgk2KbptVo2GFXnN3GJpg_yearly", // Replace with actual yearly price ID
+      stripePriceIdMonthly: "", 
+      stripePriceIdYearly: "",
     },
     {
       name: "Gladiator",
-      monthlyPrice: "$54",
-      yearlyPrice: "$43",
+      monthlyPrice: "$124",
+      yearlyPrice: "$150",
       description: "Boost your marketing reach",
       features: [
         { name: "Videos", value: "30" },
@@ -132,8 +136,8 @@ const Pricing = () => {
       ],
       popular: false,
       cta: "Choose Plan",
-      stripePriceIdMonthly: "price_1SoOgk2KbptVo2GFXnN3GJpg_gladiator", // Replace with actual monthly price ID
-      stripePriceIdYearly: "price_1SoOgk2KbptVo2GFXnN3GJpg_gladiator_yearly", // Replace with actual yearly price ID
+      stripePriceIdMonthly: "", 
+      stripePriceIdYearly: "",
     },
   ];
 
@@ -198,6 +202,7 @@ const Pricing = () => {
                 }}
               >
                 <div
+                  onClick={() => handleChoosePlan(plan)}
                   className={`relative rounded-2xl p-6 md:p-6 flex flex-col transition-all duration-500 cursor-pointer h-full
                     hover:bg-[#3D3470] hover:shadow-[0_20px_40px_rgba(61,52,112,0.4)]
                     ${
@@ -344,7 +349,6 @@ const Pricing = () => {
                   </div>
 
                   <button
-                    onClick={() => handleChoosePlan(plan)}
                     className="w-full py-2.5 md:py-3 px-8 rounded-full text-xs md:text-base font-bold transition-all duration-200 mt-4 tracking-wider cursor-pointer bg-gradient-to-r from-[#F472B6] to-[#A855F7] text-white shadow-lg shadow-pink-200/20 active:scale-95"
                   >
                     {plan.cta}
