@@ -21,7 +21,7 @@ const SubscriptionPage = () => {
       </div>
 
       {/* ── CURRENT PLAN ── */}
-      <div className="max-w-2xl mb-8">
+      <div className="w-full mb-8">
         <SubscriptionCard />
       </div>
 

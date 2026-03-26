@@ -71,7 +71,7 @@ export default function UserProfile() {
         <p className="text-sm text-gray-400 mt-1">Manage your personal information and preferences</p>
       </div>
 
-      <div className="max-w-2xl space-y-5">
+      <div className="w-full space-y-5">
 
         {/* ── PROFILE CARD ── */}
         <div className="relative bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
