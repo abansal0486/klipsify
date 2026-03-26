@@ -428,7 +428,7 @@ Make a plan and create the marketing calendar by week.`;
       description: createProjectDto.description,
       audience: createProjectDto.audience,
       slogan: createProjectDto.slogan,
-      products: createProjectDto.products,
+      products: createProjectDto.products || [],
       domain: createProjectDto.domain,
       style: createProjectDto.style,
       wantsWeeklyPlan: this.toBoolean(createProjectDto.wantsWeeklyPlan),
@@ -439,26 +439,7 @@ Make a plan and create the marketing calendar by week.`;
       lastActivityAt: new Date(),
     };
 
-    if (createProjectDto.products && Array.isArray(createProjectDto.products)) {
-      for (const product of createProjectDto.products) {
-        await this.productModel.create({
-          productName: product.productName,
-          productImage: product.productImage,
-        });
-      }
-    }
-
-    const brandData: any = {
-      brandName: createProjectDto.brandName,
-      industry: createProjectDto.industry,
-      description: createProjectDto.description,
-      slogan: createProjectDto.slogan,
-      products: createProjectDto.products,
-    };
-
-    await this.brandModel.create(brandData);
-
-    // Upload logo
+    // Upload logo first
     if (files?.logo && files.logo.length > 0) {
       const logoGcsPath = await this.uploadToGCS(
         files.logo[0],
@@ -469,7 +450,7 @@ Make a plan and create the marketing calendar by week.`;
       projectData.logoViewUrl = this.generateViewUrl(logoGcsPath);
     }
 
-    // Upload media files
+    // Upload media files and sync image URLs back to products
     if (files?.mediaFiles && files.mediaFiles.length > 0) {
       const mediaUploadResults: MediaFileUpload[] = [];
 
@@ -492,6 +473,44 @@ Make a plan and create the marketing calendar by week.`;
       }
 
       projectData.mediaFiles = mediaUploadResults;
+
+      // Sync uploaded image URLs back to products that have the "has_image" marker
+      if (Array.isArray(projectData.products)) {
+        let mediaIdx = 0;
+        projectData.products = projectData.products.map((product: any) => {
+          if (product.productImage === 'has_image' && mediaUploadResults[mediaIdx]) {
+            return { ...product, productImage: mediaUploadResults[mediaIdx++].viewUrl };
+          }
+          return { ...product, productImage: product.productImage === 'has_image' ? '' : product.productImage };
+        });
+      }
+    } else if (Array.isArray(projectData.products)) {
+      // No media files uploaded — clear any leftover "has_image" markers
+      projectData.products = projectData.products.map((product: any) => ({
+        ...product,
+        productImage: product.productImage === 'has_image' ? '' : product.productImage,
+      }));
+    }
+
+    // Create Brand document (after file upload so products have correct image URLs)
+    await this.brandModel.create({
+      brandName: createProjectDto.brandName,
+      industry: createProjectDto.industry,
+      description: createProjectDto.description,
+      slogan: createProjectDto.slogan,
+      products: projectData.products,
+    });
+
+    // Create standalone Product documents with correct image URLs
+    if (Array.isArray(projectData.products)) {
+      for (const product of projectData.products) {
+        if (product.productName) {
+          await this.productModel.create({
+            productName: product.productName,
+            productImage: product.productImage || '',
+          });
+        }
+      }
     }
 
     // Generate calendar if needed

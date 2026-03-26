@@ -1,4 +1,5 @@
 import api from "../../api/axios";
+import { toast } from "react-toastify";
 const API_URL = process.env.REACT_APP_API_URL;
 
 /* ================================
@@ -93,6 +94,7 @@ export const generateContent = (payload) => async (dispatch) => {
 
     if (!jobId) {
       console.error("JobId missing in API response:", res.data);
+      toast.error("Generation failed: No job ID returned");
       return;
     }
 
@@ -107,7 +109,9 @@ export const generateContent = (payload) => async (dispatch) => {
       },
     });
   } catch (error) {
-    console.error("Generate content error:", error);
+    const message = error.response?.data?.message || error.message;
+    console.error("Generate content error:", message);
+    toast.error(`Generation failed: ${message}`);
   }
 };
 /* ================================
@@ -230,10 +234,12 @@ if (data?.videoUrls) {
     });
 
   } catch (error) {
+    const message = error.response?.data?.message || error.message;
     dispatch({
       type: FETCH_GALLERY_FAIL,
-      payload: error.response?.data?.message || error.message,
+      payload: message,
     });
+    toast.error(`Failed to fetch gallery: ${message}`);
   }
 };
 
@@ -253,12 +259,15 @@ export const deleteMedia = (item) => async (dispatch) => {
       type: DELETE_MEDIA_SUCCESS,
       payload: item.id,
     });
+    toast.success("Media deleted successfully!");
 
   } catch (error) {
+    const message = error.response?.data?.message || error.message;
     dispatch({
       type: DELETE_MEDIA_FAIL,
-      payload: error.response?.data?.message || error.message,
+      payload: message,
     });
+    toast.error(`Delete failed: ${message}`);
   }
 };
 

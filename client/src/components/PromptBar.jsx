@@ -23,10 +23,30 @@ import {
   generateContent,
   uploadImage,
 } from "../redux/actions/imageVideoAction";
+import { fetchBrands } from "../redux/actions/brandAction";
 import { toast } from "react-toastify";
 import RecentGenerations from "./RecentGenerations";
 import { useNavigate } from "react-router-dom";
 import SideDrawer from "./SideDrawer";
+
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3002";
+
+function mapBrandForPromptBar(b) {
+  return {
+    id: b._id,
+    name: b.brandName,
+    industry: b.industry || "",
+    slogan: b.slogan || "",
+    description: b.description || "",
+    logo: b.logoViewUrl ? `${API_URL}/${b.logoViewUrl}` : null,
+    products: (b.products || []).map((p) => ({
+      id: p._id,
+      name: p.productName,
+      description: p.description || "",
+      image: p.productImage ? `${API_URL}/${p.productImage}` : null,
+    })),
+  };
+}
 
 const typewriterPhrases = [
   "A cinematic sunset over Tokyo at golden hour...",
@@ -48,6 +68,7 @@ const typewriterPhrases = [
 
 export default function PromptBar() {
   const dispatch = useDispatch();
+  const { brands: rawBrands } = useSelector((state) => state.brand);
   const [prompt, setPrompt] = useState("");
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeMode, setActiveMode] = useState("video");
@@ -89,6 +110,10 @@ export default function PromptBar() {
   useEffect(() => {
     dispatch({ type: "SET_PROMPT_TEXT", payload: prompt });
   }, [prompt, dispatch]);
+
+  useEffect(() => {
+    dispatch(fetchBrands());
+  }, [dispatch]);
 
   // ── Typewriter placeholder ──────────────────────────────────────────────
 
@@ -1487,6 +1512,7 @@ export default function PromptBar() {
         icon={<Briefcase size={14} className="text-white" />}
       >
         <BrandDrawerContent
+          brands={(rawBrands || []).map(mapBrandForPromptBar)}
           brandStep={brandStep}
           setBrandStep={setBrandStep}
           activeBrand={activeBrand}
@@ -1560,85 +1586,6 @@ export default function PromptBar() {
    BRAND DRAWER CONTENT
    Two-step: list → products (if brand has products)
 ───────────────────────────────────────────── */
-const DUMMY_BRANDS = [
-  {
-    name: "NovaTech",
-    industry: "Technology",
-    description: "Next generation smart devices",
-    slogan: "Innovate the Future",
-    logo: null,
-    products: [
-      {
-        name: "Nova Laptop Pro",
-        description: "Ultra-thin professional laptop",
-        image:
-          "https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=400",
-      },
-      {
-        name: "Nova Wireless Mouse",
-        description: "Ergonomic silent wireless mouse",
-        image:
-          "https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=400",
-      },
-      {
-        name: "Nova Smart Monitor",
-        description: "4K curved display with HDR",
-        image:
-          "https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?w=400",
-      },
-    ],
-  },
-  {
-    name: "GlowSkin",
-    industry: "Beauty",
-    description: "Premium skincare products",
-    slogan: "Glow Naturally",
-    logo: null,
-    products: [
-      {
-        name: "Vitamin C Serum",
-        description: "Brightening antioxidant serum",
-        image:
-          "https://images.unsplash.com/photo-1600185365926-3a2ce3cdb9eb?w=400",
-      },
-      {
-        name: "Hydrating Face Cream",
-        description: "Deep moisture 24h face cream",
-        image:
-          "https://images.unsplash.com/photo-1611930022073-b7a4ba5fcccd?w=400",
-      },
-    ],
-  },
-  {
-    name: "UrbanFit",
-    industry: "Fitness",
-    description: "Modern fitness gear for athletes",
-    slogan: "Train Smart",
-    logo: "https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=400",
-    products: [
-      {
-        name: "Smart Fitness Watch",
-        description: "Health tracking with GPS & heart rate",
-        image:
-          "https://images.unsplash.com/photo-1516574187841-cb9cc2ca948b?w=400",
-      },
-      {
-        name: "Training Shoes",
-        description: "Lightweight high-performance shoes",
-        image:
-          "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=400",
-      },
-    ],
-  },
-  {
-    name: "LuxeWear",
-    industry: "Fashion",
-    description: "Contemporary luxury apparel",
-    slogan: "Wear Your Story",
-    logo: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=400",
-    products: [],
-  },
-];
 
 const BRAND_GRADIENTS = [
   "from-purple-500 to-pink-500",
@@ -1649,6 +1596,7 @@ const BRAND_GRADIENTS = [
 ];
 
 function BrandDrawerContent({
+  brands,
   brandStep,
   setBrandStep,
   activeBrand,
@@ -1659,8 +1607,6 @@ function BrandDrawerContent({
   onClear,
   onClose,
 }) {
-  const brands = DUMMY_BRANDS;
-
   /* ── STEP 1: Brand list ── */
   if (brandStep === "list") {
     return (
@@ -1711,6 +1657,11 @@ function BrandDrawerContent({
           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-0.5">
             Your Brands
           </p>
+          {brands.length === 0 && (
+            <p className="text-xs text-gray-400 text-center py-4">
+              No brands yet — create one in Brand Manager
+            </p>
+          )}
           {brands.map((brand) => {
             const gradient =
               BRAND_GRADIENTS[
@@ -1721,7 +1672,7 @@ function BrandDrawerContent({
 
             return (
               <button
-                key={brand.name}
+                key={brand.id || brand.name}
                 onClick={() => {
                   if (hasProducts) {
                     setActiveBrand(brand);

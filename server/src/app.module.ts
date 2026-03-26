@@ -12,6 +12,7 @@ import { VideoModule } from './video/video.module';
 import { GalleryModule } from './gallery/gallery.module';
 import { PaymentModule } from './payment/payment.module';
 import { ProjectsModule } from './projects/projects.module';
+import { BrandsModule } from './brands/brands.module';
 
 @Module({
   imports: [
@@ -38,7 +39,8 @@ import { ProjectsModule } from './projects/projects.module';
     VideoModule,
     GalleryModule,
     PaymentModule,
-    ProjectsModule
+    ProjectsModule,
+    BrandsModule,
   ],
 })
 export class AppModule {}
