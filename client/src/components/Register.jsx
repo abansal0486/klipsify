@@ -50,7 +50,7 @@ const Register = () => {
         };
 
         try {
-            await dispatch(registerUser(userData));
+            // await dispatch(registerUser(userData));
             navigate('/login');
         } catch (err) {
             // Error is handled by Redux state, but we catch to prevent uncaught promise errors
