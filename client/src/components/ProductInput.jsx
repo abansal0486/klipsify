@@ -15,7 +15,7 @@ export default function ProductInput({ index, brand, updateField, onRemove }) {
     if (file) {
       const url = URL.createObjectURL(file);
       setPreview(url);
-      updateProduct("image", url);
+      updateProduct("image", file); // Store the actual file object
     }
   };
 

@@ -11,8 +11,7 @@ export class Product {
     @Prop()
     productImage: string;
 
-    createdAt?: Date;
-    updatedAt?: Date;
+    
 }
 
 export const ProductSchema = SchemaFactory.createForClass(Product);
