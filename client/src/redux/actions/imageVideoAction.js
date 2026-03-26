@@ -1,4 +1,3 @@
-import { style } from "framer-motion/client";
 import api from "../../api/axios";
 const API_URL = process.env.REACT_APP_API_URL;
 

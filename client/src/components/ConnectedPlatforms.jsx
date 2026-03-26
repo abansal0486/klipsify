@@ -1,12 +1,12 @@
-import chef from "../assets/chef.svg";
-import spa from "../assets/spa.svg";
-import tiktok from "../assets/tiktok.svg";
-import moonPrincess from "../assets/moonPrincess.svg";
-import storyboard from "../assets/storyboard.svg";
+import chef from "../assets/chef.jpg";
+import spa from "../assets/spa.jpg";
+import tiktok from "../assets/tiktok.jpg";
+import moonPrincess from "../assets/moonPrincess.jpg";
+import storyboard from "../assets/storyboard.jpg";
 
-{
+
   /* static section*/
-}
+
 
 const ConnectedPlatforms = () => {
   const platforms = [
@@ -83,9 +83,9 @@ const ConnectedPlatforms = () => {
 
 
 
-{
+
   /* automatic slider section */
-}
+
 
 // const ConnectedPlatforms = () => {
 //   const platforms = [
@@ -196,7 +196,7 @@ const ConnectedPlatforms = () => {
 
 
 
-{/* move with buttons section*/}
+/* move with buttons section*/
 
 // const ConnectedPlatforms = () => {
 //   const scrollRef = useRef(null);

@@ -7,45 +7,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { createProject, fetchProjects } from "../../redux/actions/projectAction";
 import { useEffect } from "react";
 
-const dummyBrands = [
-  {
-    name: "NovaTech",
-    industry: "Technology",
-    slogan: "Innovate the Future",
-    description: "Next generation smart devices",
-    logo: null,
-    products: [
-      { name: "Nova Laptop Pro",     image: "https://images.unsplash.com/photo-1517336714731-489689fd1ca8" },
-      { name: "Nova Wireless Mouse", image: "https://images.unsplash.com/photo-1587829741301-dc798b83add3" },
-      { name: "Nova Smart Monitor",  image: "https://images.unsplash.com/photo-1527443224154-c4a3942d3acf" },
-      { name: "Nova Laptop Pro",     image: "https://images.unsplash.com/photo-1517336714731-489689fd1ca8" },
-      { name: "Nova Wireless Mouse", image: "https://images.unsplash.com/photo-1587829741301-dc798b83add3" },
-      { name: "Nova Smart Monitor",  image: "https://images.unsplash.com/photo-1527443224154-c4a3942d3acf" },
-    ],
-  },
-  {
-    name: "GlowSkin",
-    industry: "Beauty",
-    slogan: "Glow Naturally",
-    description: "Premium skincare products",
-    logo: null,
-    products: [
-      { name: "Vitamin C Serum",      image: "https://images.unsplash.com/photo-1600185365926-3a2ce3cdb9eb" },
-      { name: "Hydrating Face Cream", image: "https://images.unsplash.com/photo-1611930022073-b7a4ba5fcccd" },
-    ],
-  },
-  {
-    name: "UrbanFit",
-    industry: "Fitness",
-    slogan: "Train Smart",
-    description: "Modern fitness gear",
-    logo: null,
-    products: [
-      { name: "Smart Fitness Watch", image: "https://images.unsplash.com/photo-1516574187841-cb9cc2ca948b" },
-      { name: "Training Shoes",      image: "https://images.unsplash.com/photo-1542291026-7eec264c27ff" },
-    ],
-  },
-];
+
 
 export default function BrandManager() {
   const dispatch = useDispatch();

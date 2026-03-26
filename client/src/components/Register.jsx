@@ -24,7 +24,7 @@ const Register = () => {
 
     useEffect(() => {
         if (user) {
-            navigate('/login');
+            navigate('/dashboard');
         }
     }, [user, navigate]);
 
@@ -51,7 +51,7 @@ const Register = () => {
 
         try {
             await dispatch(registerUser(userData));
-            navigate('/login');
+            navigate('/dashboard');
         } catch (err) {
             // Error is handled by Redux state, but we catch to prevent uncaught promise errors
         }
