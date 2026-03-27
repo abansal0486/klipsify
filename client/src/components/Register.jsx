@@ -7,54 +7,55 @@ import { registerUser, clearErrors } from "../redux/actions/authAction";
 import { toast } from "react-toastify";
 
 const Register = () => {
-  const inputStyle =
-    "w-full p-2 font-poppins placeholder:text-[10px] border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white/50 backdrop-blur-sm transition-all duration-300 hover:border-blue-400 text-[12px]";
-  const labelStyle =
-    "text-sm text-sm  text-black font-poppins flex justify-start mb-1";
+    const inputStyle = "w-full p-2 font-poppins placeholder:text-[10px] border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white/50 backdrop-blur-sm transition-all duration-300 hover:border-blue-400 text-[12px]";
+    const labelStyle = "text-sm text-sm  text-black font-poppins flex justify-start mb-1";
 
-  const dispatch = useDispatch();
-  const navigate = useNavigate();
+    const dispatch = useDispatch();
+    const navigate = useNavigate();
 
-  const { loading, error, user } = useSelector((state) => state.auth);
+    const { loading, error, user } = useSelector((state) => state.auth);
 
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [plan, setPlan] = useState("standard");
-  const [agreeToTerms, setAgreeToTerms] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
+    const [name, setName] = useState("");
+    const [email, setEmail] = useState("");
+    const [password, setPassword] = useState("");
+    const [plan, setPlan] = useState("standard");
+    const [agreeToTerms, setAgreeToTerms] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
+    const [localError, setLocalError] = useState("");
 
-  useEffect(() => {
-    if (user) {
-      navigate("/dashboard");
-    }
-  }, [user, navigate]);
+    useEffect(() => {
+        if (user) {
+            navigate('/login');
+        }
+    }, [user, navigate]);
 
-  useEffect(() => {
-    if (error) {
-      toast.error(error, { toastId: error });
-      dispatch(clearErrors());
-    }
-  }, [error, dispatch]);
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setLocalError("");
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+        if (!name || !email || !password) {
+            setLocalError("All fields are required");
+            return;
+        }
 
-    if (!name || !email || !password) {
-      toast.error("All fields are required", { toastId: "req-fields" });
-      return;
-    }
+        if (!agreeToTerms) {
+            setLocalError("You must agree to the terms and policy");
+            return;
+        }
 
-    if (!agreeToTerms) {
-      toast.error("You must agree to the terms and policy", { toastId: "req-terms" });
-      return;
-    }
+        const userData = {
+            name,
+            email,
+            password,
+            plan
+        };
 
-    const userData = {
-      name,
-      email,
-      password,
-      plan,
+        try {
+            // await dispatch(registerUser(userData));
+            navigate('/login');
+        } catch (err) {
+            // Error is handled by Redux state, but we catch to prevent uncaught promise errors
+        }
     };
 
     try {
