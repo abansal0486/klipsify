@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { FaEye, FaEyeSlash } from "react-icons/fa";
 import { useDispatch, useSelector } from "react-redux";
 import { resetPassword, clearErrors, clearMessage } from "../redux/actions/authAction";
+import { toast } from "react-toastify";
 
 const ResetPassword = () => {
     const dispatch = useDispatch();
@@ -15,7 +16,6 @@ const ResetPassword = () => {
     const [newPassword, setNewPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
-    const [localError, setLocalError] = useState("");
 
     useEffect(() => {
         if (message) {
@@ -27,26 +27,28 @@ const ResetPassword = () => {
     }, [message, navigate]);
 
     useEffect(() => {
-        return () => {
+        if (error) {
+            toast.error(error, { toastId: error });
             dispatch(clearErrors());
+        }
+        if (message) {
+            toast.success(message, { toastId: message });
             dispatch(clearMessage());
-        };
-    }, [dispatch]);
+        }
+    }, [error, message, dispatch]);
 
     const inputStyle = "w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white/50 backdrop-blur-sm transition-all duration-300 hover:border-blue-400 text-sm";
     const labelStyle = "text-sm font-poppins text-black flex justify-start mb-2";
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        setLocalError("");
-
         if (!token) {
-            setLocalError("Invalid or missing reset token.");
+            toast.error("Invalid or missing reset token.", { toastId: "invalid_token" });
             return;
         }
 
         if (newPassword !== confirmPassword) {
-            setLocalError("Passwords do not match.");
+            toast.error("Passwords do not match.", { toastId: "pass_match" });
             return;
         }
 
@@ -59,22 +61,6 @@ const ResetPassword = () => {
                 <div className="bg-white w-full max-w-[480px] p-8 md:p-10 rounded-3xl shadow-xl border border-gray-100 flex flex-col">
                     <h1 className="text-2xl md:text-[32px] font-playfair font-bold mb-2">Create New Password</h1>
                     <p className="text-gray-500 text-sm mb-6 font-poppins">Enter your new secure password below.</p>
-
-                    {message && (
-                        <div className="bg-green-50 text-green-600 text-xs p-3 rounded-lg mb-4 text-center border border-green-100 italic">
-                            {message}
-                        </div>
-                    )}
-                    {error && (
-                        <div className="bg-red-50 text-red-600 text-xs p-3 rounded-lg mb-4 text-center border border-red-100">
-                            {error}
-                        </div>
-                    )}
-                    {localError && (
-                        <div className="bg-red-50 text-red-600 text-xs p-3 rounded-lg mb-4 text-center border border-red-100">
-                            {localError}
-                        </div>
-                    )}
 
                     {!token && !message && (
                         <div className="bg-yellow-50 text-yellow-700 text-xs p-3 rounded-lg mb-4 text-center border border-yellow-100">

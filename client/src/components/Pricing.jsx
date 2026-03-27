@@ -9,7 +9,7 @@ const Pricing = () => {
   const [selected, setSelected] = useState("monthly");
   const [expandedPlan, setExpandedPlan] = useState(null);
   const { user } = useSelector((state) => state.auth);
-  const { plans: apiPlans, loading } = useSelector((state) => state.payment);
+  const { plans: apiPlans } = useSelector((state) => state.payment);
   const dispatch = useDispatch();
   const navigate = useNavigate();
 
