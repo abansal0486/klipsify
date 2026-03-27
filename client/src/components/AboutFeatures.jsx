@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import img1 from "../assets/contentCreation.svg";
-import img2 from "../assets/youtubeNotes.svg";
-import img3 from "../assets/marketing.svg";
+import img2 from "../assets/youtubeNotes.jpg";
+import img3 from "../assets/marketing.jpg";
 import img4 from "../assets/storyTelling.svg";
 const AboutFeatures = () => {
   const slides = [

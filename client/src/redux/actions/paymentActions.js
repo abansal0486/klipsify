@@ -1,4 +1,5 @@
 import api from "../../api/axios";
+import { toast } from "react-toastify";
 
 // Action Types
 export const FETCH_PLANS_REQUEST = "FETCH_PLANS_REQUEST";
@@ -51,7 +52,8 @@ export const createCheckoutSession = (priceId, email, userId) => async (dispatch
             type: CREATE_CHECKOUT_FAIL,
             payload: error.response?.data?.message || error.message,
         });
-        console.error("Error creating checkout session:", error.response?.data?.message || error.message);
-        alert("Failed to initiate checkout. Please try again.");
+        const errorMessage = error.response?.data?.message || error.message;
+        console.error("Error creating checkout session:", errorMessage);
+        toast.error(`Checkout failed: ${errorMessage}`);
     }
 };
