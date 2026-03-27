@@ -50,21 +50,16 @@ const Register = () => {
             plan
         };
 
-        try {
-            // await dispatch(registerUser(userData));
-            navigate('/login');
+         try {
+        //await dispatch(registerUser(userData));
+        toast.success("Registration successful!");
+        navigate("/dashboard");
         } catch (err) {
-            // Error is handled by Redux state, but we catch to prevent uncaught promise errors
+        // Error is handled by Redux state, but we catch to prevent uncaught promise errors
         }
     };
 
-    try {
-      await dispatch(registerUser(userData));
-      toast.success("Registration successful!");
-      navigate("/dashboard");
-    } catch (err) {
-      // Error is handled by Redux state, but we catch to prevent uncaught promise errors
-    }
+   
   };
 
   return (
