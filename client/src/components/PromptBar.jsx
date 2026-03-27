@@ -1521,11 +1521,8 @@ export default function PromptBar() {
           selectedContext={selectedContext}
           onApply={(brand, product) => {
             // Build prompt
-            const subject = product ? product.name : brand.name;
-            const description = product?.description || brand.description || "";
-            setPrompt(
-              `An ad about @${subject}${description ? `\n${description}` : ""}`,
-            );
+            const subject = product ? `${brand.name} ${product.name}` : brand.name;
+            setPrompt(`An ad about ${subject}`);
             setIsExpanded(true);
 
             // ── Always clear previous selections first ──
@@ -1556,9 +1553,7 @@ export default function PromptBar() {
               });
             }
 
-            setSelectedBrand(
-              product ? `${brand.name} · ${product.name}` : brand.name,
-            );
+            setSelectedBrand(product ? product.name : brand.name);
             setSelectedContext({ brand, product: product || null });
             setDrawerType(null);
             setBrandStep("list");

@@ -45,21 +45,22 @@ const Register = () => {
       return;
     }
 
-    const userData = {
-      name,
-      email,
-      password,
-      plan,
+        const userData = {
+            name,
+            email,
+            password,
+            plan
+        };
+
+         try {
+        //await dispatch(registerUser(userData));
+        toast.success("Registration successful!");
+        navigate("/dashboard");
+        } catch (err) {
+        // Error is handled by Redux state, but we catch to prevent uncaught promise errors
+        }
     };
 
-    // try {
-    //   await dispatch(registerUser(userData));
-    //   toast.success("Registration successful!");
-    //   navigate("/dashboard");
-    // } catch (err) {
-    //   // Error is handled by Redux state, but we catch to prevent uncaught promise errors
-    // }
-  };
 
   return (
     <section className="h-screen overflow-hidden">
