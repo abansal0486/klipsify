@@ -61,8 +61,6 @@ const Register = () => {
         }
     };
 
-   
-  };
 
   return (
     <section className="h-screen overflow-hidden">
