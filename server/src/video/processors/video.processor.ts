@@ -419,7 +419,12 @@ const veoPrompt = await this.buildVeoPrompt(
     burnSubtitles, voiceOverText, videoDuration,
   } = job.data;
 
-  const needsSubtitles = burnSubtitles && !!voiceOverText?.trim();
+  // also allow GPT-generated VO from scriptPairs when user VO is empty
+  const scriptHasVO = job.data.scriptPairs?.some(p => p.voiceOver?.trim());
+  const effectiveVO = voiceOverText?.trim() || (scriptHasVO
+    ? job.data.scriptPairs!.map(p => p.voiceOver).filter(Boolean).join(' ')
+    : '');
+  const needsSubtitles = burnSubtitles && !!effectiveVO;
   const needsText = !needsSubtitles && useSlogan && !!slogan?.trim()
   && slogan !== voiceOverText;
   const needsLogo      = useLogo && !!logoUrl?.trim();
@@ -449,7 +454,7 @@ const processed = await this.videoProcessingService.addOverlays(videoBuffer, {
   videoRatio: videoRatio || '16:9',
   brandName: brandName || 'video',
   burnSubtitles: needsSubtitles,
-  voiceOverText: needsSubtitles ? voiceOverText!.trim() : '',
+  voiceOverText: needsSubtitles ? effectiveVO : '',
   videoDuration: videoDuration || '8s',
   // ✅ ADD — pass timed pairs so SRT uses exact start/end per segment
   subtitlePairs: needsSubtitles
@@ -571,6 +576,8 @@ private async updateGallery(
       job.data.storyboard,
       job.data.brandName || 'video-generated',
       job.data.source || 'freestyle',
+      job.data.voiceOverText?.trim() || undefined,
+      job.data.burnSubtitles ?? false,
     );
 
     this.logger.log(`✅ [${job.id}] Saved to DB: ${gcsPath}`);
