@@ -149,12 +149,12 @@ const Login = () => {
               Google
             </button>
 
-            <p className="text-center font-poppins text-gray-500 mt-4 text-sm">
+            {/* <p className="text-center font-poppins text-gray-500 mt-4 text-sm">
               Don't have an account?{" "}
               <Link to="/register" className="text-blue-600  hover:underline">
                 Register now
               </Link>
-            </p>
+            </p> */}
           </div>
         </div>
         {/** right side */}

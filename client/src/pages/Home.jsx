@@ -12,7 +12,7 @@ const HomePage = () => {
   const [isContactOpen, setIsContactOpen] = useState(false);
 
   return (
-    <div id="home" className="bg-white">
+    <div id="home" className="bg-white overflow-x-hidden">
       <Header onContactClick={() => setIsContactOpen(true)} />
       <Hero />
       <ConnectedPlatforms />

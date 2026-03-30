@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import img1 from "../assets/contentCreation.svg";
-import img2 from "../assets/youtubeNotes.jpg";
-import img3 from "../assets/marketing.jpg";
+import img2 from "../assets/youtubeNotes.png";
+import img3 from "../assets/marketing.png";
 import img4 from "../assets/storyTelling.svg";
 const AboutFeatures = () => {
   const slides = [
@@ -61,7 +61,7 @@ const AboutFeatures = () => {
       <h1 className="text-[18px] md:text-[38px] font-montserrat font-bold text-black leading-tight mb-[24px] text-center mx-auto xl:whitespace-nowrap">
         What you can do with clipsify
       </h1>
-      <div className="relative w-full max-w-[800px] md:max-w-none md:w-[1017px] group cursor-pointer">
+      <div className="relative w-full max-w-[95vw] lg:w-[1017px] group cursor-pointer">
         <div 
           className={`relative w-full overflow-hidden rounded-[32px] border border-gray-900 shadow-[0_10px_0_0_#111827] transition-all duration-300 transform group-hover:translate-y-[10px] group-hover:shadow-none`}
         >

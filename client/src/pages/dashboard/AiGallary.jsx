@@ -69,7 +69,7 @@ export default function AIGallery() {
     <div className="min-h-full text-gray-800">
 
       {/* ── HEADER ── */}
-      <div className="px-6 pt-8 pb-6">
+      <div className="px-4 md:px-6 pt-8 pb-6">
         <div className="flex items-start justify-between">
           <div>
             <div className="flex items-center gap-2 mb-1">
@@ -104,22 +104,22 @@ export default function AIGallery() {
         </div>
 
         {/* ── TABS + VIEW TOGGLE ── */}
-        <div className="flex items-center justify-between mt-6">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6">
           {/* Tabs */}
-          <div className="flex items-center gap-1 p-1 bg-white border border-gray-200 rounded-xl shadow-sm w-fit">
+          <div className="flex items-center gap-1 p-1 bg-white border border-gray-200 rounded-xl shadow-sm w-full sm:w-fit">
             {tabs.map(({ id, label, icon: Icon, count }) => (
               <button
                 key={id}
                 onClick={() => setActiveTab(id)}
-                className={`relative flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all duration-200 ${
+                className={`relative flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all duration-200 ${
                   activeTab === id
                     ? "bg-gradient-to-r from-purple-600 to-pink-500 text-white shadow-md shadow-purple-200"
                     : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
                 }`}
               >
-                <Icon size={15} />
-                {label}
-                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                <Icon size={14} className="flex-shrink-0" />
+                <span className="truncate">{label}</span>
+                <span className={`text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
                   activeTab === id ? "bg-white/25 text-white" : "bg-gray-100 text-gray-500"
                 }`}>
                   {count}
@@ -157,10 +157,10 @@ export default function AIGallery() {
       </div>
 
       {/* ── DIVIDER ── */}
-      <div className="h-px bg-gradient-to-r from-transparent via-purple-200 to-transparent mx-6" />
+      <div className="h-px bg-gradient-to-r from-transparent via-purple-200 to-transparent mx-4 md:mx-6" />
 
       {/* ── CONTENT ── */}
-      <div className="px-6 py-6">
+      <div className="px-4 md:px-6 py-6">
         {loading && allMedia.length === 0 ? (
           viewMode === "grid" ? <SkeletonGrid /> : <SkeletonList />
         ) : filteredGallery.length === 0 ? (
@@ -224,7 +224,7 @@ function ListRow({ item, index, openPreview, handleDownload, handleShare, dispat
     : `Generated ${isVideo ? "video" : "image"}`;
 
   return (
-    <div className={`group relative flex items-center gap-4 px-4 py-3.5 bg-white border rounded-2xl
+    <div className={`group relative flex items-center gap-3 sm:gap-4 px-3 sm:px-4 py-3 sm:py-3.5 bg-white border rounded-2xl
       transition-all duration-200 overflow-hidden
       ${isProcessing
         ? "border-purple-100 shadow-sm"

@@ -366,7 +366,7 @@ export default function PromptBar() {
               AI Content Studio
             </span>
           </div>
-          <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight bg-gradient-to-br from-purple-700 via-pink-500 to-violet-600 bg-clip-text text-transparent leading-tight">
+          <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight bg-gradient-to-br from-purple-700 via-pink-500 to-violet-600 bg-clip-text text-transparent leading-tight md:leading-snug">
             Create Anything
           </h1>
           <p className="text-sm md:text-base text-zinc-500 mt-3 max-w-md mx-auto leading-relaxed">

@@ -86,7 +86,7 @@ export default function Navbar() {
           >
             {initial}
           </button>
-          {open && <ProfileDropdown />}
+          {open && <ProfileDropdown onClose={() => setOpen(false)} />}
         </div>
 
       </div>

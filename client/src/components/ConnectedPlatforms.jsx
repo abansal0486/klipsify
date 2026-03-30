@@ -4,9 +4,7 @@ import tiktok from "../assets/tiktok.jpg";
 import moonPrincess from "../assets/moonPrincess.jpg";
 import storyboard from "../assets/storyboard.jpg";
 
-
-  /* static section*/
-
+/* static section*/
 
 const ConnectedPlatforms = () => {
   const platforms = [
@@ -39,7 +37,7 @@ const ConnectedPlatforms = () => {
 
   return (
     <section className="relative px-4 md:px-0 md:mb-[100px] mt-[50px]">
-      <div className="max-w-[1140px] mx-auto bg-white rounded-t-[40px]  p-3 md:p-12">
+      <div className="max-w-[1140px] mx-auto bg-white rounded-t-[40px]  p-3 md:p-6 lg:p-12">
         <div className="text-center mb-10">
           <span className="inline-block md:mb-[15px] font-montserrat  px-4 py-1.5 bg-[#FFDECD] text-[#F05602] text-[8px] md:text-xs rounded-full mb-3 tracking-[0.1em]">
             CONNECTED PLATFORMS
@@ -53,7 +51,7 @@ const ConnectedPlatforms = () => {
           </p>
         </div>
 
-        <div className="flex flex-wrap justify-center md:grid md:grid-cols-5 gap-4 md:gap-5">
+        <div className="flex flex-wrap justify-center md:grid md:grid-cols-3 lg:grid-cols-5 gap-4 md:gap-5">
           {platforms.map((platform) => (
             <div
               key={platform.id}
@@ -72,20 +70,7 @@ const ConnectedPlatforms = () => {
   );
 };
 
-
-
-
-
-
-
-
-
-
-
-
-
-  /* automatic slider section */
-
+/* automatic slider section */
 
 // const ConnectedPlatforms = () => {
 //   const platforms = [
@@ -179,23 +164,6 @@ const ConnectedPlatforms = () => {
 //   );
 // };
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 /* move with buttons section*/
 
 // const ConnectedPlatforms = () => {
@@ -214,7 +182,7 @@ const ConnectedPlatforms = () => {
 //     if (scrollRef.current) {
 //       const { scrollLeft, scrollWidth, clientWidth } = scrollRef.current;
 //       const maxScroll = scrollWidth - clientWidth;
-      
+
 //       if (maxScroll > 0) {
 //         const percentage = scrollLeft / maxScroll;
 //         const newIndex = Math.round(percentage * (platforms.length - 1));
