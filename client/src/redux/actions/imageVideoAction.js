@@ -222,7 +222,9 @@ if (data?.videoUrls) {
       galleryId: data._id,
       fileId: vid._id,
       userId: data.userId,
-      createdAt: vid.createdAt
+      createdAt: vid.createdAt,
+      voiceOverText: vid.voiceOverText || "",
+      hasSubtitle: vid.hasSubtitle ?? false,
     }));
 
   gallery = [...gallery, ...videos];

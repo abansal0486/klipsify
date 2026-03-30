@@ -15,7 +15,9 @@ interface MediaItem {
   imageId?: string;
   imageURL?: string;
   generatedPrompt?: string;
-  source?: string; // ✅ ADD THIS LINE
+  source?: string;
+  voiceOverText?: string;
+  hasSubtitle?: boolean;
 }
 
 
@@ -49,7 +51,9 @@ export class Gallery {
       imageId: { type: String },
       imageURL: { type: String },
       generatedPrompt: { type: String },
-      source: { type: String } // ✅ ADD THIS LINE
+      source: { type: String },
+      voiceOverText: { type: String },
+      hasSubtitle: { type: Boolean },
     }],
     default: []
   })

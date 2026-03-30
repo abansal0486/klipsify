@@ -2106,6 +2106,108 @@ private normalizeAspectRatio(input: string): string {
 
 
 
+  async enhancePrompt(
+    prompt: string,
+    type: 'image' | 'video' | 'voiceover',
+    duration?: string,
+  ): Promise<string> {
+    const isVoice = type === 'voiceover';
+    const seconds = duration ? parseInt(duration) : null;
+
+    const VOICEOVER_WORD_LIMITS: Record<number, number> = { 8: 10, 15: 14, 30: 18 };
+    const targetWords = seconds ? (VOICEOVER_WORD_LIMITS[seconds] ?? Math.round(seconds * 3.5)) : null;
+    const maxTokensForVoice = targetWords ? Math.ceil(targetWords * 1.4) + 15 : 60;
+
+    const videoWordLimit = seconds
+      ? seconds <= 8 ? 40 : seconds === 15 ? 70 : 120
+      : 150;
+    const maxTokensForVideo = Math.ceil(videoWordLimit * 1.5) + 30;
+
+    const durationVideoHint = seconds
+      ? `This is a ${seconds}-second video. ${
+          seconds <= 8 ? 'Focus on one strong visual moment.'
+          : seconds === 15 ? 'Include light motion or 1–2 scene beats.'
+          : 'Allow multiple cinematic beats and pacing changes.'
+        }`
+      : '';
+
+    let systemPrompt = '';
+
+    if (type === 'voiceover') {
+      systemPrompt = `
+You are a professional advertising copywriter specializing in short voiceover scripts.
+
+STRICT RULES:
+- You MUST return EXACTLY ${targetWords ?? 10} words or fewer — no exceptions
+- Count every word before returning — if over, rewrite shorter
+- Keep the same message, tone and intent
+- Improve rhythm, clarity and emotional delivery
+- Sound natural for spoken audio
+- Do NOT add scene directions or labels
+
+WORD LIMIT: ${targetWords ?? 10} words maximum.
+
+Return ONLY the script. Nothing else.
+`.trim();
+    } else {
+      systemPrompt = `
+You are a world-class AI prompt engineer for generative ${type} models.
+
+Rules:
+- Keep the core idea of the original prompt
+- Add cinematic visual detail (lighting, camera movement, atmosphere)
+- Improve realism and clarity
+- Keep the prompt concise
+
+${durationVideoHint}
+
+Keep the result under ${videoWordLimit} words.
+
+Return ONLY the enhanced prompt.
+`.trim();
+    }
+
+    const instructionMap: Record<string, string> = {
+      image:     'Enhance this image generation prompt:',
+      video:     `Enhance this ${seconds ? `${seconds}-second ` : ''}video prompt with cinematic detail:`,
+      voiceover: 'Enhance this voiceover script:',
+    };
+
+    this.logger.log(`✨ Enhancing [${type}] ${seconds ? `[${seconds}s]` : ''} — ${prompt.substring(0, 60)}...`);
+
+    try {
+      const completion = await this.client.chat.completions.create({
+        model: 'gpt-4o-mini',
+        temperature: 0.3,
+        max_tokens: isVoice ? maxTokensForVoice : maxTokensForVideo,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `${instructionMap[type] ?? 'Enhance this prompt:'}\n\n${prompt.trim()}` },
+        ],
+      });
+
+      const enhanced = completion.choices[0]?.message?.content?.trim();
+      if (!enhanced) throw new Error('GPT returned empty response');
+
+      const clean = (text: string) =>
+        text.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/).filter((w) => w.length > 3);
+      const originalWords = new Set(clean(prompt));
+      const enhancedWords = clean(enhanced);
+      const overlap = enhancedWords.filter((w) => originalWords.has(w)).length;
+
+      if (originalWords.size > 6 && overlap === 0) {
+        this.logger.warn('⚠️ Enhanced output drifted too far — returning original prompt');
+        return prompt.trim();
+      }
+
+      this.logger.log(`✅ Enhanced [${type}] — ${enhancedWords.length} words`);
+      return enhanced;
+    } catch (error: any) {
+      this.logger.error(`Enhance prompt failed: ${error.message}`);
+      return prompt.trim();
+    }
+  }
+
   private splitVoiceOver(text: string, count: number): string[] {
     if (!text.trim() || count <= 1) return Array(count).fill(text.trim());
     const words = text.trim().split(/\s+/);
@@ -2124,7 +2226,9 @@ private normalizeAspectRatio(input: string): string {
     processedImageURL?: string,
     generatedPrompt?: string,
     brandName?: string,
-    source?: string
+    source?: string,
+    voiceOverText?: string,
+    hasSubtitle?: boolean,
   ) {
     try {
       const result = await this.galleryModel.findOneAndUpdate(
@@ -2139,7 +2243,9 @@ private normalizeAspectRatio(input: string): string {
               imageId: generatedImageId?.toString() || undefined,
               imageURL: processedImageURL,
               generatedPrompt: generatedPrompt,
-              source: source
+              source: source,
+              voiceOverText: voiceOverText || undefined,
+              hasSubtitle: hasSubtitle ?? false,
             }
           }
         },

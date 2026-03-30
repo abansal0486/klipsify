@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import {
   ArrowLeft, Download, Share2, Trash2, ChevronLeft, ChevronRight,
   Sparkles, Calendar, FileText, Wand2, ImageIcon, Video, Check,
+  Mic, Captions,
 } from "lucide-react";
 import { deleteMedia } from "../../redux/actions/imageVideoAction";
 
@@ -225,6 +226,29 @@ export default function MediaPreview({ item, items = [], onClose, dispatch, hand
                 {isVideo ? "Video" : "Image"}
               </span>
             </InfoCard>
+
+            {/* Voice Script */}
+            {isVideo && (
+              <InfoCard icon={<Mic size={13} />} label="Voice Script">
+                {current?.voiceOverText
+                  ? <p className="text-xs text-gray-600 leading-relaxed">{current.voiceOverText}</p>
+                  : <p className="text-xs text-gray-400 italic">No voice script</p>
+                }
+              </InfoCard>
+            )}
+
+            {/* Subtitles */}
+            {isVideo && (
+              <InfoCard icon={<Captions size={13} />} label="Subtitles">
+                <span className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full border ${
+                  current?.hasSubtitle
+                    ? "text-purple-600 bg-purple-50 border-purple-200"
+                    : "text-gray-400 bg-gray-50 border-gray-200"
+                }`}>
+                  {current?.hasSubtitle ? "On" : "Off"}
+                </span>
+              </InfoCard>
+            )}
 
             {/* Filename */}
             {current?.filename && (
