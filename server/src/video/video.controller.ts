@@ -19,7 +19,7 @@ import {
   HttpCode
 } from "@nestjs/common";
 import { memoryStorage } from "multer";
-import { VideoService, DomainInfo } from "./video.service";
+import { VideoService, DomainInfo, ScriptVoPair } from "./video.service";
 import { 
   CreateVideoDto,
   GenerateImageDto,
@@ -238,8 +238,8 @@ export class VideoController {
 
   @Post("generate-image")
   @HttpCode(HttpStatus.ACCEPTED)
-  @ApiOperation({ summary: 'Generate AI image' })
-  @ApiResponse({ status: 202, description: 'Image queued' })
+  @ApiOperation({ summary: 'Unified content generation (freestyle)' })
+  @ApiResponse({ status: 202, description: 'Content queued' })
   async generateImage(@Body() body: {
     userId: string;
     storyboard: string;
@@ -445,8 +445,10 @@ async generateContent(@Body() body: {
   prompt: string;
   aspectRatio: string;
   contentType: 'image' | 'video';
+  audioType?: 'none' | 'voiceover';
   voiceOver?: string;
-  hasSubtitle?: boolean;        // ✅ new field
+  voiceGender?: string;
+  hasSubtitle?: boolean;
   videoDuration?: '8s' | '15s' | '30s';
   referenceImage?: string[];
   logo?: string;
@@ -457,13 +459,14 @@ async generateContent(@Body() body: {
   try {
     const {
       userId, contentName, prompt, aspectRatio,
-      contentType, voiceOver, hasSubtitle,        // ✅ destructured
-      videoDuration, referenceImage, logo, source
+      contentType, audioType, voiceOver,
+      voiceGender, hasSubtitle,
+      videoDuration, referenceImage, logo, source,
     } = body;
 
     this.validateRequiredFields(
-      { userId, prompt, contentType },
-      ['userId', 'prompt', 'contentType']
+      { userId, prompt: prompt?.trim(), contentType },
+      ['userId', 'prompt', 'contentType'],
     );
 
     if (!['image', 'video'].includes(contentType)) {
@@ -483,6 +486,7 @@ async generateContent(@Body() body: {
     const useLogo = Boolean(logo);
 
     this.logger.log(`🎨 ${contentType.toUpperCase()} freestyle - User: ${userId}`);
+    this.logger.log(` body payload - ${JSON.stringify(body)}`);
 
     // ─── IMAGE ───────────────────────────────────────────────────────────────
     if (contentType === 'image') {
@@ -527,28 +531,35 @@ async generateContent(@Body() body: {
     }
 
     // ─── VIDEO ───────────────────────────────────────────────────────────────
-    const trimmedVoiceOver = voiceOver?.trim() || '';
-    const hasVoiceOver = Boolean(trimmedVoiceOver);
+    // Backward-compat: if audioType not sent but voiceOver is, treat as voiceover
+    const voiceText = (audioType === 'voiceover' || (!audioType && voiceOver?.trim()))
+      ? (voiceOver?.trim() ?? '')
+      : '';
+    const hasVoiceText = Boolean(voiceText);
+    const burnSubtitles = hasVoiceText && Boolean(hasSubtitle);
 
-    // hasSubtitle is only meaningful when voiceOver exists
-    const burnSubtitles = hasVoiceOver && Boolean(hasSubtitle);
+    this.logger.log(`🎙️ Voice: "${voiceText.substring(0, 50)}" | subtitle=${burnSubtitles}`);
 
-    let scriptPairs: { script: string; voiceOver: string }[];
+    let scriptPairs: ScriptVoPair[];
 
     try {
       scriptPairs = await this.videoService.generateVideoScripts(
         prompt.trim(),
         videoDuration ?? '8s',
-        trimmedVoiceOver,
+        voiceText || undefined,
       );
-      this.logger.log(
-        `✅ Scripts generated: ${scriptPairs.length} pair(s) for ${videoDuration}`,
-      );
+      this.logger.log(`✅ Script pairs built: ${scriptPairs.length} segment(s) for ${videoDuration ?? '8s'}`);
     } catch (scriptError: any) {
-      this.logger.error(`Script generation failed: ${scriptError.message}`);
-      scriptPairs = [{ script: prompt.trim(), voiceOver: trimmedVoiceOver }];
+      this.logger.error(`Script build failed: ${scriptError.message}`);
+      scriptPairs = [{
+        script:        prompt.trim(),
+        voiceOver:     voiceText,
+        subtitleStart: 1.0,
+        subtitleEnd:   6.5,
+      }];
     }
-    console.log(scriptPairs);
+
+    this.logger.log(`📋 Script pairs: ${JSON.stringify(scriptPairs)}`);
 
     const payload = {
       userId: userId.trim(),
@@ -563,8 +574,8 @@ async generateContent(@Body() body: {
       logoUrl: logo?.trim() || '',
       useSlogan: false,
       slogan: '',
-      burnSubtitles,                   // ✅ true only if voiceOver + hasSubtitle
-      voiceOverText: trimmedVoiceOver,
+      burnSubtitles,
+      voiceOverText: voiceText,
       language: 'English',
       videoDuration: videoDuration?.trim() || '8s',
       referenceImage: referenceImage || [],
@@ -579,9 +590,9 @@ async generateContent(@Body() body: {
     this.logger.log(`✅ VIDEO freestyle queued - ${duration}ms - Job: ${result.jobId}`);
 
     const estimatedTime =
-      videoDuration === '30s' ? '8-10 minutes'
-      : videoDuration === '15s' ? '4-5 minutes'
-      : '2-3 minutes';
+      videoDuration === '30s' ? '8-10 minutes' :
+      videoDuration === '15s' ? '4-5 minutes'  :
+      '2-3 minutes';
 
     return this.buildSuccess({
       isPending: true,
@@ -591,12 +602,15 @@ async generateContent(@Body() body: {
       statusCheckUrl: `/video/job-status/${result.jobId}`,
       estimatedTime,
       remaining: result.remaining,
+      scriptPairs,
       details: {
         prompt: prompt.substring(0, 100),
         aspectRatio,
         scriptsGenerated: scriptPairs.length,
-        hasVoiceOver,
-        hasSubtitle: burnSubtitles,    // ✅ reflected in response details
+        audioType: audioType ?? 'none',
+        hasVoiceOver: hasVoiceText,
+        voiceGender: voiceGender ?? 'female',
+        hasSubtitle: burnSubtitles,
         videoDuration: videoDuration || '8s',
         referenceImageCount: referenceImage?.length || 0,
         hasLogo: useLogo,
@@ -1069,22 +1083,44 @@ async testLongVideo(@Body() body: any) {
 
 
 @Post('test-generate-scripts')
-async testGenerateScripts(@Body() body: { 
-  prompt: string; 
-  videoDuration: '8s' | '15s' | '30s'; 
-  voiceOver?: string 
+async testGenerateScripts(@Body() body: {
+  prompt: string;
+  videoDuration: '8s' | '15s' | '30s';
+  voiceOver?: string
 }) {
   const scriptPairs = await this.videoService.generateVideoScripts(
     body.prompt,
     body.videoDuration,
     body.voiceOver
   );
-  return { 
-    success: true, 
-    count: scriptPairs.length, 
-    scriptPairs,                                    // ← show pairs not flat array
-    scripts: scriptPairs.map(p => p.script),        // ← for backward compat
+  return {
+    success: true,
+    count: scriptPairs.length,
+    scriptPairs,
+    scripts: scriptPairs.map(p => p.script),
   };
+}
+
+
+@Post('enhance-prompt')
+@ApiOperation({ summary: 'Enhance a prompt using AI' })
+@ApiResponse({ status: 200, description: 'Enhanced prompt returned' })
+async enhancePrompt(@Body() body: {
+  prompt: string;
+  type: 'image' | 'video' | 'voiceover';
+  duration?: string;
+}) {
+  const { prompt, type, duration } = body;
+
+  if (!prompt?.trim()) {
+    throw new BadRequestException('prompt is required');
+  }
+  if (!['image', 'video', 'voiceover'].includes(type)) {
+    throw new BadRequestException('type must be image, video, or voiceover');
+  }
+
+  const enhanced = await this.videoService.enhancePrompt(prompt.trim(), type, duration);
+  return { success: true, enhanced };
 }
 
 

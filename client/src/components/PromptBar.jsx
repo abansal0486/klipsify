@@ -29,7 +29,7 @@ import RecentGenerations from "./RecentGenerations";
 import { useNavigate } from "react-router-dom";
 import SideDrawer from "./SideDrawer";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3002";
+const API_URL = import.meta.env.REACT_APP_API_URL || "http://localhost:3002";
 
 function mapBrandForPromptBar(b) {
   return {
@@ -88,6 +88,7 @@ export default function PromptBar() {
   const [audioPrompt, setAudioPrompt] = useState("");
   const [voiceGender, setVoiceGender] = useState("female");
   const [voiceTone, setVoiceTone] = useState("calm");
+  const [hasSubtitle, setHasSubtitle] = useState(false);
 
   const containerRef = useRef(null);
   const [showStarDropdown, setShowStarDropdown] = useState(false);
@@ -264,8 +265,13 @@ export default function PromptBar() {
         prompt,
         aspectRatio: ratio,
         contentType: activeMode,
-        voiceOver:
-          activeMode === "video" ? audioPrompt || undefined : undefined,
+        ...(activeMode === "video" && {
+          audioType: audioPrompt.trim() ? "voiceover" : "none",
+          voiceOver: audioPrompt.trim() || undefined,
+          voiceGender,
+          hasSubtitle: audioPrompt.trim() ? hasSubtitle : false,
+          videoDuration: duration,
+        }),
         referenceImage:
           referenceImages.length > 0
             ? referenceImages.map((img) => img.url)
@@ -1488,6 +1494,30 @@ export default function PromptBar() {
               rows={4}
               className="w-full bg-zinc-50 border-2 border-zinc-200 rounded-2xl p-4 text-sm text-black outline-none resize-none placeholder:text-zinc-400 focus:border-purple-400 transition"
             />
+          </div>
+
+          {/* SUBTITLES TOGGLE */}
+          <div className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${audioPrompt.trim() ? "border-zinc-200 bg-white" : "border-zinc-100 bg-zinc-50 opacity-50"}`}>
+            <div className="flex items-center gap-3">
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${hasSubtitle && audioPrompt.trim() ? "bg-gradient-to-br from-purple-500 to-pink-500" : "bg-zinc-100"}`}>
+                <Layers size={16} className={hasSubtitle && audioPrompt.trim() ? "text-white" : "text-zinc-500"} />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-zinc-800">Subtitles</p>
+                <p className="text-[11px] text-zinc-400 mt-0.5">
+                  {audioPrompt.trim() ? "Display captions on the video" : "Enter a voice script first"}
+                </p>
+              </div>
+            </div>
+            <button
+              disabled={!audioPrompt.trim()}
+              onClick={() => setHasSubtitle((v) => !v)}
+              className={`relative w-11 h-6 rounded-full transition-all duration-200 ${hasSubtitle && audioPrompt.trim() ? "bg-gradient-to-r from-purple-500 to-pink-500" : "bg-zinc-200"}`}
+            >
+              <span
+                className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all duration-200 ${hasSubtitle && audioPrompt.trim() ? "left-[22px]" : "left-0.5"}`}
+              />
+            </button>
           </div>
 
           {/* APPLY BUTTON */}
