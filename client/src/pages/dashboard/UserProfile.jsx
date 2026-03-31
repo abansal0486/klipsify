@@ -2,7 +2,8 @@ import { useRef, useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import {
   Lock, Camera, Trash2, Pencil, Check, X,
-  User, Mail, Phone, Globe, Sparkles, ShieldCheck,
+  User, Mail, Phone, Globe, ShieldCheck,
+  CircleUser,
 } from "lucide-react";
 import google from "../../assets/google-icon.svg";
 import { useDispatch, useSelector } from "react-redux";
@@ -63,11 +64,11 @@ export default function UserProfile() {
       <div className="mb-8">
         <div className="flex items-center gap-2 mb-1">
           <div className="w-6 h-6 rounded-md bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-sm shadow-purple-200">
-            <Sparkles size={12} className="text-white" />
+            <CircleUser size={15} className="text-white" />
           </div>
           <span className="text-xs font-bold text-purple-500 uppercase tracking-widest">Account</span>
         </div>
-        <h1 className="text-2xl md:text-3xl font-extrabold text-gray-900 tracking-tight">My Profile</h1>
+        <h1 className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight">My Profile</h1>
         <p className="text-sm text-gray-400 mt-1">Manage your personal information and preferences</p>
       </div>
 
@@ -90,7 +91,7 @@ export default function UserProfile() {
           <div className="px-6 pt-6 pb-5 flex flex-col sm:flex-row items-center sm:items-start gap-5 border-b border-gray-100">
             {/* Avatar */}
             <div className="relative flex-shrink-0">
-              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-2xl font-extrabold shadow-lg shadow-purple-200 overflow-hidden">
+              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-2xl font-bold shadow-lg shadow-purple-200 overflow-hidden">
                 {profile.photo
                   ? <img src={profile.photo} alt="profile" className="w-full h-full object-cover" />
                   : initials
@@ -108,7 +109,7 @@ export default function UserProfile() {
 
             {/* Name + email + actions */}
             <div className="flex-1 text-center sm:text-left min-w-0">
-              <h2 className="text-lg font-extrabold text-gray-900 truncate">{profile.name || "Your Name"}</h2>
+              <h2 className="text-lg font-bold  text-gray-900 truncate">{profile.name || "Your Name"}</h2>
               <p className="text-sm text-gray-400 truncate">{profile.email}</p>
               <div className="flex items-center justify-center sm:justify-start gap-2 mt-3">
                 {profile.photo && (
@@ -232,7 +233,7 @@ export default function UserProfile() {
               <Lock size={16} className="text-gray-500" />
             </div>
             <div className="flex-1">
-              <h3 className="text-sm font-extrabold text-gray-900 mb-1">Password & Security</h3>
+              <h3 className="text-sm font-bold text-gray-900 mb-1">Password & Security</h3>
               <p className="text-xs text-gray-400 leading-relaxed">
                 To change or reset your password, visit the{" "}
                 <Link to="/forgot-password" className="text-purple-600 font-semibold hover:underline">
@@ -254,7 +255,7 @@ export default function UserProfile() {
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
           <div className="h-1 bg-gradient-to-r from-blue-400 via-indigo-400 to-blue-400" />
           <div className="px-6 py-5 border-b border-gray-100">
-            <h3 className="text-sm font-extrabold text-gray-900">Connected Accounts</h3>
+            <h3 className="text-sm font-bold text-gray-900">Connected Accounts</h3>
             <p className="text-xs text-gray-400 mt-0.5">Services you use to sign in to Clipsyfy</p>
           </div>
           <div className="px-6 py-4">

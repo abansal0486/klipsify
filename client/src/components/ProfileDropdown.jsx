@@ -1,10 +1,9 @@
-import { useDispatch, useSelector } from "react-redux";
-import { logoutUser } from "../redux/actions/authAction";
+import {  useSelector } from "react-redux";
+
 import { useNavigate } from "react-router-dom";
 import { User, LogOut, CreditCard } from "lucide-react";
 
-export default function ProfileDropdown({ onClose }) {
-  const dispatch = useDispatch();
+export default function ProfileDropdown({ onClose, onLogout }) {
   const navigate = useNavigate();
   const user = useSelector((s) => s.auth?.user);
 
@@ -12,10 +11,7 @@ export default function ProfileDropdown({ onClose }) {
   const displayName = user?.name || "User";
   const email       = user?.email || "";
 
-  const handleLogout = async () => {
-    await dispatch(logoutUser());
-    navigate("/login");
-  };
+
 
   return (
     <div className="absolute right-0 top-[calc(100%+10px)] w-56 z-50
@@ -47,7 +43,7 @@ export default function ProfileDropdown({ onClose }) {
       <div className="mx-3 h-px bg-gray-100" />
 
       <div className="p-2">
-        <DropdownItem icon={<LogOut size={14} />} label="Logout" danger onClick={handleLogout} />
+        <DropdownItem icon={<LogOut size={14} />} label="Logout" danger onClick={onLogout} />
       </div>
     </div>
   );

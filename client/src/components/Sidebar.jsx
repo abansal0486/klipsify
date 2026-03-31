@@ -1,12 +1,16 @@
-import { Home, Sparkles, Gem, Turntable, LogOut } from "lucide-react";
+import { Home, Award, LogOut,Images, Crown } from "lucide-react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { logoutUser } from "../redux/actions/authAction";
+import LogoutModal from "./LogoutModal";
+import { toast } from "react-toastify";
+import { useState } from "react";
 
 export default function Sidebar() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const user     = useSelector((s) => s.auth?.user);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
   const initial  = user?.name?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || "U";
 
   return (
@@ -20,9 +24,9 @@ export default function Sidebar() {
       {/* ── NAV ITEMS ── */}
       <nav className="flex flex-col items-center gap-1 w-full px-3 flex-1">
         <SidebarItem to="/dashboard"              icon={<Home size={19} />}      label="Studio"  end />
-        <SidebarItem to="/dashboard/gallery"      icon={<Sparkles size={19} />}  label="Gallery"     />
-        <SidebarItem to="/dashboard/brand"        icon={<Turntable size={19} />} label="Brand"       />
-        <SidebarItem to="/dashboard/subscription" icon={<Gem size={19} />}       label="Upgrade"     />
+        <SidebarItem to="/dashboard/gallery"      icon={<Images size={19} />}  label="Gallery"     />
+        <SidebarItem to="/dashboard/brand"        icon={<Award size={19} />} label="Brand"       />
+        <SidebarItem to="/dashboard/subscription" icon={<Crown size={19} />}       label="Upgrade"     />
       </nav>
 
       {/* ── DIVIDER ── */}
@@ -35,7 +39,18 @@ export default function Sidebar() {
           icon={<LogOut size={18} />}
           label="Logout"
           danger
-          onClick={() => dispatch(logoutUser())}
+          onClick={() => setShowLogoutModal(true)}
+        />
+
+        <LogoutModal 
+          isOpen={showLogoutModal} 
+          onClose={() => setShowLogoutModal(false)}
+          onConfirm={() => { 
+            setShowLogoutModal(false);
+            dispatch(logoutUser()); 
+            toast.success("Logout successful");
+            navigate("/"); 
+          }}
         />
 
         {/* ── AVATAR / SETTINGS ── */}

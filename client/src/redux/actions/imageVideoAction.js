@@ -300,7 +300,8 @@ export const uploadImage = async (file) => {
     return relative.startsWith("http") ? relative : `${API_URL}${relative}`;
   } catch (err) {
     console.error("uploadImage error:", err);
-    throw new Error(err?.message || "Upload failed");
+    const backendMessage = err.response?.data?.message;
+    throw new Error(backendMessage || err?.message || "Upload failed");
   }
 };
 

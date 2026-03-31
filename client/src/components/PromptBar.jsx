@@ -372,10 +372,10 @@ export default function PromptBar() {
               AI Content Studio
             </span>
           </div>
-          <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight bg-gradient-to-br from-purple-700 via-pink-500 to-violet-600 bg-clip-text text-transparent leading-tight md:leading-snug">
+          <h1 className="text-3xl md:text-5xl font-bold tracking-tight bg-gradient-to-br from-purple-700 via-pink-500 to-violet-600 bg-clip-text text-transparent leading-tight md:leading-snug">
             Create Anything
           </h1>
-          <p className="text-sm md:text-base text-zinc-500 mt-3 max-w-md mx-auto leading-relaxed">
+          <p className="text-sm font-montserrat md:text-sm text-zinc-500 max-w-lg mx-auto leading-relaxed">
             Transform your ideas into stunning videos &amp; images powered by AI
           </p>
         </div>
@@ -826,7 +826,7 @@ export default function PromptBar() {
                     <button
                       onClick={handleGenerate}
                       disabled={!prompt.trim() || loading}
-                      className={`flex-shrink-0 flex items-center gap-2 h-9 px-5 rounded-full text-xs md:text-sm font-semibold transition-all duration-200
+                      className={`flex-shrink-0 flex items-center justify-center w-full md:w-auto gap-2 h-10 md:h-9 px-5 rounded-full text-xs md:text-sm font-semibold transition-all duration-200
                         ${
                           prompt.trim() && !loading
                             ? "bg-gradient-to-r from-pink-500 to-purple-600 text-white shadow-md shadow-purple-200 hover:shadow-lg hover:shadow-purple-300 hover:scale-[1.02]"
@@ -1641,7 +1641,7 @@ function BrandDrawerContent({
           <div className="absolute -right-4 -top-4 w-20 h-20 rounded-full bg-white/10" />
           <div className="absolute right-2 bottom-0 w-10 h-10 rounded-full bg-white/10" />
           <div className="relative z-10">
-            <p className="text-white font-extrabold text-sm">Brand Identity</p>
+            <p className="text-white font-bold text-sm">Brand Identity</p>
             <p className="text-white/70 text-xs mt-0.5">
               Select a brand — then pick a product if available
             </p>
@@ -1724,7 +1724,7 @@ function BrandDrawerContent({
                       className="w-full h-full object-contain p-0.5"
                     />
                   ) : (
-                    <span className="text-white font-extrabold text-sm">
+                    <span className="text-white font-bold text-sm">
                       {brand.name[0]}
                     </span>
                   )}
@@ -1797,13 +1797,13 @@ function BrandDrawerContent({
                   className="w-full h-full object-contain p-0.5"
                 />
               ) : (
-                <span className="text-white font-extrabold text-base">
+                <span className="text-white font-bold text-base">
                   {activeBrand.name[0]}
                 </span>
               )}
             </div>
             <div>
-              <p className="text-white font-extrabold text-sm">
+              <p className="text-white font-bold text-sm">
                 {activeBrand.name}
               </p>
               <p className="text-white/70 text-[11px]">

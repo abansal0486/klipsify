@@ -8,7 +8,7 @@ import ytLogo from "../assets/logos_youtube-icon.svg";
 import liLogo from "../assets/linkedIn.svg";
 import xLogo from "../assets/miniInsta.svg";
 import aiIcon from "../assets/ai-icon.svg";
-const words = ["Growth", "Results"];
+const words = ["Growth", "Results","Content"];
 
 const DynamicWord = () => {
   const [currentWord, setCurrentWord] = React.useState("");

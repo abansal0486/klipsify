@@ -1,13 +1,16 @@
 import { useRef, useState, useEffect } from "react";
 import ProfileDropdown from "./ProfileDropdown";
-import { Menu, X, Home, Sparkles, Gem, Turntable, Zap } from "lucide-react";
+import { Menu, X, Home, Sparkles, Images, Award, Crown } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { logoutUser } from "../redux/actions/authAction";
+import LogoutModal from "./LogoutModal";
+import { toast } from "react-toastify";
 
 export default function Navbar() {
   const [open, setOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
   const containerRef = useRef(null);
   const navigate = useNavigate();
   const dispatch = useDispatch();
@@ -31,24 +34,19 @@ export default function Navbar() {
       {/* Gradient accent line */}
       <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-purple-500 via-pink-500 to-purple-500 opacity-60 pointer-events-none" />
 
-      {/* ── LEFT: mobile menu + logo ── */}
+      {/* ── LEFT: logo ── */}
       <div className="flex items-center gap-3">
-        <button
-          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          className="md:hidden w-8 h-8 rounded-lg bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-500 hover:text-gray-800 transition"
-        >
-          {isMobileMenuOpen ? <X size={16} /> : <Menu size={16} />}
-        </button>
-
         {/* LOGO */}
         <div
-          onClick={() => navigate("/dashboard")}
+          onClick={() => navigate("/")}
           className="flex items-center gap-2 cursor-pointer select-none"
         >
           <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-md shadow-purple-200">
             <Sparkles size={14} className="text-white" />
           </div>
-          <span className="text-base md:text-lg font-extrabold tracking-tight">
+          <span 
+          onClick={() => navigate("/")}
+          className="text-base md:text-lg font-bold tracking-tight">
             <span className="bg-gradient-to-r from-purple-600 to-pink-500 bg-clip-text text-transparent">klip</span>
             <span className="text-gray-800">sify</span>
           </span>
@@ -72,7 +70,7 @@ export default function Navbar() {
             shadow-md shadow-purple-200 hover:shadow-purple-300
             transition-all duration-200"
         >
-          <Zap size={11} className="fill-current" />
+          <Crown size={11} className="fill-current" />
           <span className="hidden md:inline">Upgrade</span>
         </button>
 
@@ -86,21 +84,38 @@ export default function Navbar() {
           >
             {initial}
           </button>
-          {open && <ProfileDropdown onClose={() => setOpen(false)} />}
+          {open && (
+            <ProfileDropdown 
+              onClose={() => setOpen(false)} 
+              onLogout={() => { setShowLogoutModal(true); setOpen(false); }} 
+            />
+          )}
         </div>
+
+        <button
+          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          className="md:hidden w-8 h-8 rounded-lg bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-500 hover:text-gray-800 transition ml-1"
+        >
+          {isMobileMenuOpen ? <X size={16} /> : <Menu size={16} />}
+        </button>
 
       </div>
 
       {/* ── MOBILE MENU ── */}
-      {isMobileMenuOpen && (
-        <div className="md:hidden absolute top-14 left-0 w-full bg-white border-b border-gray-200 px-4 py-5 shadow-lg flex flex-col gap-5 z-50">
-
+      <div 
+        className={`md:hidden absolute top-14 left-0 w-full bg-white shadow-lg overflow-hidden transition-all duration-300 ease-in-out z-50 ${
+          isMobileMenuOpen 
+            ? "max-h-[500px] border-b border-gray-200 opacity-100" 
+            : "max-h-0 border-b-0 opacity-0 pointer-events-none"
+        }`}
+      >
+        <div className="flex flex-col gap-5 px-4 py-5">
           <div className="space-y-1">
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-3 mb-3">Navigation</p>
             <MobileMenuItem icon={<Home size={17} />}      label="Studio"       onClick={() => { navigate("/dashboard"); setIsMobileMenuOpen(false); }} />
-            <MobileMenuItem icon={<Sparkles size={17} />}  label="Gallery"      onClick={() => { navigate("/dashboard/gallery"); setIsMobileMenuOpen(false); }} />
-            <MobileMenuItem icon={<Turntable size={17} />} label="Brand"        onClick={() => { navigate("/dashboard/brand"); setIsMobileMenuOpen(false); }} />
-            <MobileMenuItem icon={<Gem size={17} />}       label="Subscription" onClick={() => { navigate("/dashboard/subscription"); setIsMobileMenuOpen(false); }} />
+            <MobileMenuItem icon={<Images size={17} />}  label="Gallery"      onClick={() => { navigate("/dashboard/gallery"); setIsMobileMenuOpen(false); }} />
+            <MobileMenuItem icon={<Award size={17} />} label="Brand"        onClick={() => { navigate("/dashboard/brand"); setIsMobileMenuOpen(false); }} />
+            <MobileMenuItem icon={<Crown size={17} />}       label="Subscription" onClick={() => { navigate("/dashboard/subscription"); setIsMobileMenuOpen(false); }} />
           </div>
 
           <div className="h-px bg-gray-100" />
@@ -108,11 +123,21 @@ export default function Navbar() {
           <div className="space-y-1">
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-3 mb-3">Account</p>
             <MobileMenuItem icon={<span className="text-sm font-bold text-purple-600">{initial}</span>} label="Profile" onClick={() => { navigate("/dashboard/profile"); setIsMobileMenuOpen(false); }} />
-            <MobileMenuItem label="Logout" danger onClick={() => dispatch(logoutUser())} />
+            <MobileMenuItem label="Logout" danger onClick={() => { setShowLogoutModal(true); setIsMobileMenuOpen(false); }} />
           </div>
-
         </div>
-      )}
+      </div>
+
+      <LogoutModal 
+        isOpen={showLogoutModal} 
+        onClose={() => setShowLogoutModal(false)}
+        onConfirm={() => { 
+          setShowLogoutModal(false);
+          dispatch(logoutUser()); 
+          toast.success("Logout successful");
+          navigate("/"); 
+        }}
+      />
     </div>
   );
 }

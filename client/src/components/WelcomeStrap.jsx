@@ -10,14 +10,14 @@ export const WelcomeStrap = () => {
                 <div className="flex flex-col md:flex-row justify-between items-center gap-4 text-center md:text-left">
                     {/* Left Content */}
                     <div className="flex-1">
-                        <h2 className="text-lg md:text-6xl font-bold font-playfair text-[#1A1A1A] leading-[1.2]">
+                        <h2 className="text-lg md:text-6xl font-bold font-montserrat text-[#1A1A1A] leading-[1.2]">
                             Welcome to the future of content.
                         </h2>
                     </div>
 
                     {/* Right Content */}
                     <div className="flex-1 flex justify-center md:justify-end">
-                        <p className="text-sm md:text-[40px] font-playfair text-[#1A1A1A]">
+                        <p className="text-sm md:text-[40px] font-montserrat text-[#1A1A1A]">
                             Welcome to <span className="text-[##0E7676] font-bold">MY BRAND</span>
                         </p>
                     </div>

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Package, Tag, Sparkles, LayoutGrid, List } from "lucide-react";
+import { X, Package, Tag, LayoutGrid, List } from "lucide-react";
 
 const cardGradients = [
   "from-purple-500 to-pink-500",
@@ -40,11 +40,11 @@ export default function ProductGalleryDrawer({ brand, close }) {
 
           {/* Brand identity */}
           <div className="flex items-center gap-4 relative z-10">
-            <div className="w-14 h-14 rounded-2xl bg-white/20 border-2 border-white/30 flex items-center justify-center text-white text-lg font-extrabold shadow-lg backdrop-blur-sm">
+            <div className="w-14 h-14 rounded-2xl bg-white/20 border-2 border-white/30 flex items-center justify-center text-white text-lg font-bold shadow-lg backdrop-blur-sm">
               {initials}
             </div>
             <div>
-              <h2 className="text-xl font-extrabold text-white leading-tight">{brand.name}</h2>
+              <h2 className="text-xl font-bold text-white leading-tight">{brand.name}</h2>
               <div className="flex items-center gap-2 mt-1">
                 <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-white/80 bg-white/15 border border-white/20 px-2 py-0.5 rounded-full">
                   <Tag size={9} />
@@ -73,7 +73,7 @@ export default function ProductGalleryDrawer({ brand, close }) {
         {/* ── PRODUCTS TOOLBAR ── */}
         <div className="flex items-center justify-between px-6 py-3 border-b border-gray-100 bg-gray-50/60">
           <div className="flex items-center gap-2">
-            <Sparkles size={13} className="text-purple-400" />
+            <Package size={16} className="text-purple-400" />
             <span className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">Products</span>
           </div>
           <div className="flex items-center gap-1 p-0.5 bg-white border border-gray-200 rounded-lg shadow-sm">

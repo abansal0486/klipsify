@@ -1,9 +1,9 @@
-import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
+import  { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { fetchGallery, deleteMedia, pullJobs } from "../../redux/actions/imageVideoAction";
 import MediaCard from "../../components/MediaCard";
 import MediaPreview from "./MediaPreview";
-import { Images, Video, Sparkles, FolderOpen, LayoutGrid, List, Download, Share2, Trash2, Play, ImageIcon, Loader2 } from "lucide-react";
+import { Images, Video, FolderOpen, LayoutGrid, List, Download, Share2, Trash2, Play, ImageIcon, Loader2 } from "lucide-react";
 
 const PAGE_SIZE = 5;
 
@@ -102,13 +102,13 @@ export default function AIGallery() {
           <div>
             <div className="flex items-center gap-2 mb-1">
               <div className="w-6 h-6 rounded-md bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-sm shadow-purple-200">
-                <Sparkles size={12} className="text-white" />
+                <Images size={15} className="text-white" />
               </div>
               <span className="text-xs font-bold text-purple-500 uppercase tracking-widest">
                 Media Library
               </span>
             </div>
-            <h1 className="text-2xl md:text-3xl font-extrabold text-gray-900 tracking-tight">
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight">
               My Gallery
             </h1>
             <p className="text-sm text-gray-400 mt-1">

@@ -94,10 +94,10 @@ export default function IndustryInput({ value, onChange, placeholder = "e.g. Tec
               className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left hover:bg-purple-50 border-b border-gray-100 transition-colors group"
             >
               <span className="w-5 h-5 rounded-md bg-purple-100 flex items-center justify-center flex-shrink-0">
-                <span className="text-[10px] font-extrabold text-purple-600">+</span>
+                <span className="text-[10px] font-bold text-purple-600">+</span>
               </span>
               <span className="text-xs font-semibold text-purple-700 truncate">
-                Use "<span className="font-extrabold">{query.trim()}</span>"
+                Use "<span className="font-bold">{query.trim()}</span>"
               </span>
             </button>
           )}
