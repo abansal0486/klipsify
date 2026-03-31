@@ -1738,7 +1738,7 @@ private normalizeAspectRatio(input: string): string {
           },
         }],
         parameters: {
-          durationSeconds: 8,
+          durationSeconds: 7,
           sampleCount: CONFIG.VIDEO.SAMPLE_COUNT,
           aspectRatio: deviceType,
           ...(CONFIG.GCP.OUTPUT_URI ? { storageUri: CONFIG.GCP.OUTPUT_URI } : {}),
