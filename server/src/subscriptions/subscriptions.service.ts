@@ -33,6 +33,10 @@ export class SubscriptionsService {
     },
   });
 }
+
+async getSubscriptionByUserId(userId:any) {
+  return this.subscriptionModel.findOne({ userId:userId, isActive: true });
+}
 //   async create(createDto: CreateSubscriptionDto): Promise<Subscription> {
 //   const { userId } = createDto;
 

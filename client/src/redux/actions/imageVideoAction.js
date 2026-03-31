@@ -225,6 +225,7 @@ if (data?.videoUrls) {
       createdAt: vid.createdAt,
       voiceOverText: vid.voiceOverText || "",
       hasSubtitle: vid.hasSubtitle ?? false,
+      videoDuration: vid.videoDuration || "",
     }));
 
   gallery = [...gallery, ...videos];

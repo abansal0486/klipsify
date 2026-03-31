@@ -23,6 +23,7 @@
     "@aws-sdk/client-s3": "^3.879.0",
     "@bull-board/express": "^6.15.0",
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "@ffprobe-installer/ffprobe": "^2.1.2",
     "@golevelup/nestjs-stripe": "^0.9.3",
     "@google-cloud/storage": "^7.17.3",
     "@google-cloud/vertexai": "^1.10.0",
