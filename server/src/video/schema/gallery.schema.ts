@@ -18,6 +18,7 @@ interface MediaItem {
   source?: string;
   voiceOverText?: string;
   hasSubtitle?: boolean;
+  videoDuration?: string;
 }
 
 
@@ -54,6 +55,7 @@ export class Gallery {
       source: { type: String },
       voiceOverText: { type: String },
       hasSubtitle: { type: Boolean },
+      videoDuration: { type: String },
     }],
     default: []
   })

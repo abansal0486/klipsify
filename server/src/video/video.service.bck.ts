@@ -54,12 +54,12 @@ const CONFIG = {
     VIDEO_JOB: 7200,
   },
   QUEUE: {
-    IMAGE_ATTEMPTS: 2,
-    VIDEO_ATTEMPTS: 2,
+    IMAGE_ATTEMPTS: 3,
+    VIDEO_ATTEMPTS: 1,
     BACKOFF_DELAY: 3000,
   },
   MEDIA: {
-    MAX_RETRIES: 1,
+    MAX_RETRIES: 3,
     VALID_IMAGE_EXTS: ['png', 'jpeg', 'jpg', 'gif', 'webp', 'avif'],
     VALID_IMAGE_MIMES: ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif'],
     UNSUPPORTED_FORMATS: ['image/svg+xml', 'image/avif', 'image/x-icon'],
@@ -99,13 +99,13 @@ interface LimitCheck {
 
 export interface ScriptVoPair {
   script: string;
-  narrator?: string;        // ✅ optional
-  voiceOver?: string;       // ✅ optional
-  narratorGender?: string;  // ✅ optional
-  subtitleStart?: number;   // ✅ optional
-  subtitleEnd?: number;     // ✅ optional
-  isExtension: boolean;
-  isLast: boolean;
+  narrator?: string;
+  voiceOver?: string;
+  narratorGender?: string;
+  subtitleStart?: number;
+  subtitleEnd?: number;
+  isExtension?: boolean;
+  isLast?: boolean;
 }
 
 
@@ -1142,7 +1142,7 @@ async getJobStatus(userId: string, jobId: string) {
     try {
       const user = await this.userModel.findById(userId);
 
-    //   if (user?.currentPlanName !== 'free') return false;
+      // if (user?.currentPlanName !== 'free') return false;
 
       const sambaBase64 = await this.convertUrlToBase64('https://samba.ink/sambaWaterMark.png');
 
@@ -1417,7 +1417,6 @@ private normalizeAspectRatio(input: string): string {
             durationSeconds: CONFIG.VIDEO.DURATION,
             sampleCount: CONFIG.VIDEO.SAMPLE_COUNT,
             aspectRatio: deviceType,
-            enhancePrompt: true,
             ...(CONFIG.GCP.OUTPUT_URI ? { storageUri: CONFIG.GCP.OUTPUT_URI } : {}),
           },
         };
@@ -1738,7 +1737,6 @@ private normalizeAspectRatio(input: string): string {
           },
         }],
         parameters: {
-          durationSeconds: 8,
           sampleCount: CONFIG.VIDEO.SAMPLE_COUNT,
           aspectRatio: deviceType,
           ...(CONFIG.GCP.OUTPUT_URI ? { storageUri: CONFIG.GCP.OUTPUT_URI } : {}),
@@ -1804,902 +1802,262 @@ private normalizeAspectRatio(input: string): string {
   }
 
   async testLongVideoFlow(
-    scripts: string[],   // ← array instead of single string
+    scripts: string[],
     deviceType: string,
     targetDuration: number = 15,
-    logoUrl?: string,   
+    logoUrl?: string,
     referenceImages?: string[]
   ): Promise<any> {
-
-    const BASE_DURATION = 8;
-    const EXTENSION_DURATION = 8;
-    const MAX_RETRIES = 2;
+    const MAX_RETRIES = 3;
     const RETRY_WAIT_MS = 20000;
+    const clipsNeeded = targetDuration <= 8 ? 1 : targetDuration <= 16 ? 2 : 4;
+    const getScript = (index: number) => scripts[index] ?? scripts[scripts.length - 1];
 
-    const extensionsNeeded = Math.round((targetDuration - BASE_DURATION) / EXTENSION_DURATION);
-    const getScript = (index: number) => scripts[Math.min(index, scripts.length - 1)];
+    this.logger.log(`🎬 Target: ${targetDuration}s → Clips needed: ${clipsNeeded}`);
 
+    const clipPaths: string[] = [];
 
-    this.logger.log(`Target: ${targetDuration}s → Extensions needed: ${extensionsNeeded}`);
-
-    // ── STEP 1: Base video ──
-    let baseResult: any = null;
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-      this.logger.log(`Base attempt ${attempt}/${MAX_RETRIES} with script[0]`);
-      const base = await this.generateVideoUsingVeo3(getScript(0), deviceType, logoUrl, referenceImages,undefined);
-      baseResult = await this.pollUntilDone(base.operationName, base.startTimestamp, {});
-
-      if (baseResult.success && baseResult.gcsPath) break;
-
-      this.logger.warn(`Base attempt ${attempt} failed: ${baseResult?.error}`);
-      if (attempt < MAX_RETRIES) await new Promise(r => setTimeout(r, RETRY_WAIT_MS));
-    }
-
-    if (!baseResult?.success || !baseResult?.gcsPath) {
-    return { 
-      success: false, 
-      step: 'base', 
-      error: baseResult?.error,
-      baseVideoCreated: false,  // ✅ processor uses this to decide rollback
-    };
-  }
-
-    let currentGcsUri = `gs://${CONFIG.GCP.BUCKET}/${baseResult.gcsPath}`;
-    let currentDuration = BASE_DURATION;
-
-    // ── STEP 2+: Extensions with own script ──
-    for (let i = 1; i <= extensionsNeeded; i++) {
-      const extensionScript = getScript(i); // ← each extension gets its own script
-      let extResult: any = null;
-      let extSuccess = false;
+    for (let i = 0; i < clipsNeeded; i++) {
+      let clipResult: any = null;
 
       for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-        this.logger.log(`Extension ${i} | Attempt ${attempt} | using script[${i}]`);
+        this.logger.log(`Clip ${i + 1}/${clipsNeeded} | Attempt ${attempt} | script[${i}]`);
 
-        try {
-          const ext = await this.extendVideoUsingVeo(extensionScript, currentGcsUri, deviceType);
-          extResult = await this.pollUntilDone(ext.operationName, ext.startTimestamp, {});
+        const gen = await this.generateVideoUsingVeo3(
+          getScript(i),
+          deviceType,
+          i === 0 ? logoUrl : undefined,
+          i === 0 ? referenceImages : undefined,
+          undefined,
+        );
+        clipResult = await this.pollUntilDone(gen.operationName, gen.startTimestamp, {});
 
-          if (extResult.success && extResult.gcsPath) {
-            extSuccess = true;
-            break;
-          }
-        } catch (err: any) {
-          this.logger.warn(`Extension ${i} attempt ${attempt} threw: ${err.message}`);
-        }
+        if (clipResult.success && clipResult.gcsPath) break;
 
+        this.logger.warn(`Clip ${i + 1} attempt ${attempt} failed: ${clipResult?.error}`);
         if (attempt < MAX_RETRIES) await new Promise(r => setTimeout(r, RETRY_WAIT_MS));
       }
 
-    if (!extSuccess) {
-    this.logger.warn(`⚠️ Extension ${i} failed — returning base video (${currentDuration}s)`);
+      if (!clipResult?.success || !clipResult?.gcsPath) {
+        if (i === 0) {
+          return { success: false, step: 'clip_0', error: clipResult?.error, baseVideoCreated: false };
+        }
+        this.logger.warn(`⚠️ Clip ${i + 1} failed — using ${i} clip(s)`);
+        break;
+      }
 
-    const partialGcsPath = currentGcsUri.replace(`gs://${CONFIG.GCP.BUCKET}/`, '');
-    return {
-      success: true,                                    // ✅ partial success
-      isPartial: true,                                  // ✅ processor checks this
-      baseVideoCreated: true,                           // ✅ no rollback needed
-      partialReason: `Extension ${i} failed after ${MAX_RETRIES} attempts`,
-      actualDuration: currentDuration,                  // how long video actually is
-      requestedDuration: targetDuration,                // what user requested
-      finalGcsPath: partialGcsPath,                     // ✅ base video path
-      downloadUrl: `/video/test-download?filename=${encodeURIComponent(partialGcsPath)}`,
-      viewUrl: `/video/view-file?filename=${encodeURIComponent(partialGcsPath)}`,
-    };
-  }
-
-
-      currentGcsUri = `gs://${CONFIG.GCP.BUCKET}/${extResult.gcsPath}`;
-      currentDuration += EXTENSION_DURATION;
-      this.logger.log(`Extension ${i} done → now ${currentDuration}s`);
+      clipPaths.push(clipResult.gcsPath);
+      this.logger.log(`✅ Clip ${i + 1} ready → ${clipResult.gcsPath}`);
     }
 
-    const finalGcsPath = currentGcsUri.replace(`gs://${CONFIG.GCP.BUCKET}/`, '');
+    if (clipPaths.length === 0) {
+      return { success: false, error: 'No clips generated', baseVideoCreated: false };
+    }
 
-    return {
-      success: true,
-      actualDuration: `${currentDuration}s`,
-      finalGcsPath,
-      downloadUrl: `/video/test-download?filename=${encodeURIComponent(finalGcsPath)}`,
-      viewUrl: `/video/view-file?filename=${encodeURIComponent(finalGcsPath)}`,
-    };
+    // Single clip — no concatenation needed
+    if (clipPaths.length === 1) {
+      const gcsPath = clipPaths[0];
+      return {
+        success: true,
+        isPartial: clipsNeeded > 1,
+        baseVideoCreated: true,
+        actualDuration: 8,
+        requestedDuration: targetDuration,
+        finalGcsPath: gcsPath,
+        downloadUrl: `/video/test-download?filename=${encodeURIComponent(gcsPath)}`,
+        viewUrl: `/video/view-file?filename=${encodeURIComponent(gcsPath)}`,
+      };
+    }
+
+    // Multiple clips — concatenate with FFmpeg
+    try {
+      this.logger.log(`🔗 Concatenating ${clipPaths.length} clips...`);
+      const finalGcsPath = await this.concatenateClipsFromGcs(clipPaths);
+      const actualDuration = clipPaths.length * 8;
+      this.logger.log(`✅ Concatenated video → ${finalGcsPath} (${actualDuration}s)`);
+
+      return {
+        success: true,
+        isPartial: clipPaths.length < clipsNeeded,
+        baseVideoCreated: true,
+        actualDuration,
+        requestedDuration: targetDuration,
+        finalGcsPath,
+        downloadUrl: `/video/test-download?filename=${encodeURIComponent(finalGcsPath)}`,
+        viewUrl: `/video/view-file?filename=${encodeURIComponent(finalGcsPath)}`,
+      };
+    } catch (err: any) {
+      this.logger.warn(`⚠️ Concatenation failed: ${err.message} — returning first clip`);
+      const fallback = clipPaths[0];
+      return {
+        success: true,
+        isPartial: true,
+        baseVideoCreated: true,
+        actualDuration: 8,
+        requestedDuration: targetDuration,
+        finalGcsPath: fallback,
+        downloadUrl: `/video/test-download?filename=${encodeURIComponent(fallback)}`,
+        viewUrl: `/video/view-file?filename=${encodeURIComponent(fallback)}`,
+      };
+    }
   }
 
-//   async generateVideoScripts(
-//     prompt: string,
-//     videoDuration: '8s' | '15s' | '30s',
-//     voiceOver?: string
-//   ): Promise<ScriptVoPair[]> {
-//     const durationMap = { '8s': 1, '15s': 2, '30s': 4 };
-//     const segmentDurations: Record<string, number[]> = { '8s': [8], '15s': [8, 7], '30s': [8, 7, 7, 8] };
-//     const scriptCount = durationMap[videoDuration] || 1;
-//     const durations = segmentDurations[videoDuration] || [8];
-
-//     // ✅ Only treat as user voiceOver if it's a meaningful sentence (8+ words)
-//     const needsGeneratedVO = !voiceOver?.trim() || voiceOver.trim().split(/\s+/).length <= 8;
-
-//     const systemPrompt = `You are a professional cinematic video script writer for Google Veo AI video generation.
-
-//   Your job is to write ${scriptCount} segment(s) that together form ONE seamless continuous video.
-
-//   CRITICAL RULES:
-//   - ALL scripts must describe the EXACT SAME scene, camera, lighting, mood and style
-//   - Script 1 sets the scene
-//   - Scripts 2, 3, 4 are micro-continuations — same shot, subtle camera movement only
-//   - The viewer should NEVER feel a scene change or cut between scripts
-//   - Same subject, same environment, same atmosphere throughout
-//   - Only allow very subtle motion changes (slow zoom in, slight pan, gentle orbit)
-//   - Each SCRIPT must be 40-60 words
-//   ${needsGeneratedVO
-//     ? `- Each VOICEOVER must be 10-20 words, natural spoken narration that sells or describes the product
-//   - Voiceover should feel like a real advertisement narrator`
-//     : ''}
-//   - Decide WHEN the voiceover narration starts and ends within each segment
-//   - Narration should NOT start at 0 — leave 1-2 seconds of silence first
-//   - Narration should NOT end at the last second — leave 0.5s silence at end
-//   - Segment 1 is exactly 8 seconds, segments 2/3/4 are exactly 7 seconds each
-//   - NO extra labels, titles or markdown other than the format below
-//   - Separate each segment with exactly: ---SPLIT---
-//   - Output ONLY the segments, nothing else
-
-//   NARRATOR GENDER RULE:
-//   - Analyze the product/brand and decide the best narrator gender
-//   - Beauty, skincare, haircare, feminine hygiene products → FEMALE
-//   - Tech, sports, automotive, finance, masculine products → MALE
-//   - Neutral/lifestyle products → FEMALE by default
-//   - Add GENDER: male OR GENDER: female ONCE at the very top before all segments
-
-//   OUTPUT FORMAT:
-//   GENDER: [male|female]
-//   SCRIPT: [cinematic scene description 40-60 words]
-//   VOICEOVER: [natural narration 10-20 words]
-//   START: [when narration starts in this segment e.g. 1.5]
-//   END: [when narration ends in this segment e.g. 6.0]
-//   ---SPLIT---
-//   SCRIPT: [next scene]
-//   VOICEOVER: [next narration]
-//   START: [e.g. 1.0]
-//   END: [e.g. 5.5]`;
-
-//     const segmentLabels = [
-//       'Establish the scene (8 seconds)',
-//       'Continue SAME shot with subtle slow zoom or gentle camera drift (7 seconds)',
-//       'Continue SAME shot, camera moves slightly closer or orbits gently (7 seconds)',
-//       'Continue SAME shot, final slow push-in or hold on subject (7 seconds)',
-//     ];
-
-//     const segmentExamples = Array.from({ length: scriptCount }, (_, i) =>
-//       `Segment ${i + 1}: ${segmentLabels[i] || segmentLabels[segmentLabels.length - 1]}`
-//     ).join('\n');
-
-//     const userPrompt = `User idea: "${prompt}"
-
-//   Write EXACTLY ${scriptCount} segment(s) for a ${videoDuration} video.
-
-//   ${scriptCount === 1
-//       ? `Write 1 segment describing the scene cinematically.`
-//       : `All segments must feel like ONE continuous shot — same scene, same subject, same lighting.\n${segmentExamples}`
-//     }
-
-//   ${!needsGeneratedVO
-//       ? `User has provided their own voiceover: "${voiceOver!.trim()}"
-//   Split it evenly across ${scriptCount} segment(s) — do NOT change the words, just distribute naturally.`
-//       : `Generate a natural advertisement-style voiceover for each segment.`
-//     }
-
-//   Output format (strictly follow, repeat per segment):
-//   GENDER: [male|female]   ← only on very first line
-//   SCRIPT: [scene here]
-//   VOICEOVER: [narration here]
-//   START: [start second within this segment]
-//   END: [end second within this segment]
-//   ---SPLIT---
-//   SCRIPT: [next scene]
-//   VOICEOVER: [next narration]
-//   START: [start second]
-//   END: [end second]`;
-
-//     try {
-//       this.logger.log(`🎬 Generating ${scriptCount} script(s) for ${videoDuration} video`);
-
-//       const response = await this.client.chat.completions.create({
-//         model: 'gpt-4o-mini',
-//         messages: [
-//           { role: 'system', content: systemPrompt },
-//           { role: 'user', content: userPrompt },
-//         ],
-//         temperature: 0.4,
-//         max_tokens: 1500,
-//       });
-
-//       const raw = response.choices[0]?.message?.content?.trim() || '';
-//       if (!raw) throw new Error('GPT returned empty response');
-
-//       // ✅ Extract narrator gender (appears once at top)
-//       const genderMatch = raw.match(/GENDER:\s*(male|female)/i);
-//       const genderDecided = (genderMatch?.[1]?.toLowerCase() as 'male' | 'female') || 'female';
-// const narratorGender = genderDecided === 'male'
-//   ? 'James, a male narrator with a deep, warm, smooth American accent, low consistent pitch, close-mic style, professional advertisement voice'
-//   : 'Same female host, warm friendly voice, American accent. Medium shot, talking to camera';
-// this.logger.log(`🎙️ Narrator decided: ${narratorGender}`);
-
-
-//       // ✅ Remove GENDER line before splitting into segments
-//       const cleanRaw = raw.replace(/GENDER:\s*(male|female)\s*\n?/i, '').trim();
-
-//       // ✅ Split into segments
-//       const segments = cleanRaw
-//         .split(/\n?---SPLIT---\n?/)
-//         .map(s => s.trim())
-//         .filter(s => s.length > 10);
-
-//       if (segments.length === 0) throw new Error('No segments parsed from GPT response');
-
-//       // ✅ Pad if GPT returns fewer than needed
-//       while (segments.length < scriptCount) {
-//         segments.push(segments[segments.length - 1]);
-//       }
-
-//       // ✅ If user provided a proper voiceOver, pre-split it
-//       const userVoChunks = !needsGeneratedVO
-//         ? this.splitVoiceOver(voiceOver!.trim(), scriptCount)
-//         : null;
-
-//       // ✅ Build result with GPT-decided timing per segment
-//       let cumulativeTime = 0;
-
-//       const result: ScriptVoPair[] = segments.slice(0, scriptCount).map((seg, i) => {
-//         // Parse each field from segment
-//         const scriptMatch = seg.match(/SCRIPT:\s*([\s\S]+?)(?=VOICEOVER:|START:|END:|$)/i);
-//         const voMatch     = seg.match(/VOICEOVER:\s*([\s\S]+?)(?=START:|END:|$)/i);
-//         const startMatch  = seg.match(/START:\s*([\d.]+)/i);
-//         const endMatch    = seg.match(/END:\s*([\d.]+)/i);
-
-//         const script   = scriptMatch?.[1]?.trim() || seg.trim();
-//         const voiceout = userVoChunks
-//           ? (userVoChunks[i] || '')           // ✅ user-provided, pre-split
-//           : (voMatch?.[1]?.trim() || '');     // ✅ GPT-generated
-
-//         const segDuration = durations[i] || 7;
-
-//         // ✅ Use GPT-decided local timing, fallback to safe defaults
-//         const localStart = parseFloat(startMatch?.[1] ?? '1.0');
-//         const localEnd   = parseFloat(endMatch?.[1]   ?? String(segDuration - 0.5));
-
-//         // ✅ Convert local segment time → absolute video timeline
-//         const subtitleStart = parseFloat((cumulativeTime + localStart).toFixed(2));
-//         const subtitleEnd   = parseFloat((cumulativeTime + Math.min(localEnd, segDuration - 0.3)).toFixed(2));
-
-//         cumulativeTime += segDuration;
-
-//         this.logger.log(`📝 Script   ${i + 1}: ${script.substring(0, 80)}...`);
-//         this.logger.log(`🎙️ VoiceOver ${i + 1}: ${voiceout.substring(0, 80) || '(none)'}`);
-//         this.logger.log(`⏱️ Subtitle  ${i + 1}: ${subtitleStart}s → ${subtitleEnd}s (local: ${localStart}s → ${localEnd}s)`);
-
-//         return {
-//           script,
-//           voiceOver: voiceout,
-//           narratorGender,     // ✅ same gender locked for all segments
-//           subtitleStart,      // ✅ absolute time in full video
-//           subtitleEnd,        // ✅ absolute time in full video
-//         };
-//       });
-
-//       this.logger.log(`✅ Generated ${result.length} script(s) | Gender: ${narratorGender}`);
-//       return result;
-
-//     } catch (error: any) {
-//       this.logger.error(`Script generation failed: ${error.message}`);
-//       this.logger.warn(`⚠️ Using fallback scripts`);
-
-//       // ✅ Fallback — safe default timings
-//       const voChunks = this.splitVoiceOver(voiceOver?.trim() || '', scriptCount);
-//       let cumulativeTime = 0;
-
-//       return Array.from({ length: scriptCount }, (_, i) => {
-//         const segDuration = durations[i] || 7;
-//         const subtitleStart = parseFloat((cumulativeTime + 1.0).toFixed(2));
-//         const subtitleEnd   = parseFloat((cumulativeTime + segDuration - 0.5).toFixed(2));
-//         cumulativeTime += segDuration;
-
-//         return {
-//           script: prompt.trim(),
-//           voiceOver: voChunks[i] || '',
-//           narratorGender: 'female narrator, smooth warm voice, medium-high consistent pitch, do not change pitch or tone throughout the video',
-//           subtitleStart,
-//           subtitleEnd,
-//         };
-//       });
-//     }
-//   }
-
-// ─── Add this method to VideoService ────────────────────────────────────────
-
-// async generateVideoScripts(
-//   prompt: string,
-//   videoDuration: '8s' | '15s' | '30s',
-//   voiceOver?: string,
-//   narratorOverride?: string,
-//   audioType?: 'voiceover' | 'narrator',  // ✅ only addition
-// ): Promise<ScriptVoPair[]> {
-//   const durationMap = { '8s': 1, '15s': 2, '30s': 4 };
-//   const segmentDurations: Record<string, number[]> = { '8s': [8], '15s': [8, 7], '30s': [8, 7, 7, 8] };
-//   const scriptCount = durationMap[videoDuration] || 1;
-//   const durations = segmentDurations[videoDuration] || [8];
-
-//   // ✅ For narrator — never generate VO, always use user text as-is
-//   // ✅ For voiceover — generate if user text too short
-//   const needsGeneratedVO = audioType === 'narrator'
-//     ? false
-//     : (!voiceOver?.trim() || voiceOver.trim().split(/\s+/).length <= 8);
-
-//   const systemPrompt = `You are a professional cinematic video script writer for Google Veo AI video generation.
-
-// Your job is to write ${scriptCount} segment(s) that together form ONE seamless continuous video.
-
-// CRITICAL RULES:
-// - ALL scripts must describe the EXACT SAME scene, camera, lighting, mood and style
-// - Script 1 sets the scene
-// - Scripts 2, 3, 4 are micro-continuations — same shot, subtle camera movement only
-// - The viewer should NEVER feel a scene change or cut between scripts
-// - Same subject, same environment, same atmosphere throughout
-// - Only allow very subtle motion changes (slow zoom in, slight pan, gentle orbit)
-// - Each SCRIPT must be 40-60 words
-// ${needsGeneratedVO
-//   ? `- Each VOICEOVER must be 10-20 words, natural spoken narration that sells or describes the product
-// - Voiceover should feel like a real advertisement narrator`
-//   : audioType === 'narrator'
-//     ? `- User has provided narrator dialogue — split it naturally across ${scriptCount} segment(s), DO NOT change any words`
-//     : `- User has provided their own voiceover — split it evenly, DO NOT change any words`
-// }
-// - Narration should NOT start at 0 — leave 1-2 seconds of silence first
-// - Narration should NOT end at the last second — leave 0.5s silence at end
-// - Segment 1 is exactly 8 seconds, segments 2/3/4 are exactly 7 seconds each
-// - NO extra labels, titles or markdown other than the format below
-// - Separate each segment with exactly: ---SPLIT---
-// - Output ONLY the segments, nothing else
-
-// ${!narratorOverride ? `NARRATOR GENDER RULE:
-// - Analyze the product/brand and decide the best narrator gender
-// - Beauty, skincare, haircare, feminine hygiene products → FEMALE
-// - Tech, sports, automotive, finance, masculine products → MALE
-// - Neutral/lifestyle products → FEMALE by default
-// - Add GENDER: male OR GENDER: female ONCE at the very top before all segments` :
-// `NARRATOR GENDER RULE:
-// - User has selected their narrator — output GENDER: ${narratorOverride.toLowerCase().includes('james') || narratorOverride.toLowerCase().includes('george') ? 'male' : 'female'} at the top`
-// }
-
-// OUTPUT FORMAT:
-// GENDER: [male|female]
-// SCRIPT: [cinematic scene description 40-60 words]
-// VOICEOVER: [narration or dialogue for this segment]
-// START: [when narration starts in this segment e.g. 1.5]
-// END: [when narration ends in this segment e.g. 6.0]
-// ---SPLIT---`;
-
-//   // ... segmentLabels and segmentExamples unchanged ...
-//   const segmentLabels = [
-//     'Establish the scene (8 seconds)',
-//     'Continue SAME shot with subtle slow zoom or gentle camera drift (7 seconds)',
-//     'Continue SAME shot, camera moves slightly closer or orbits gently (7 seconds)',
-//     'Continue SAME shot, final slow push-in or hold on subject (7 seconds)',
-//   ];
-
-//   const segmentExamples = Array.from({ length: scriptCount }, (_, i) =>
-//     `Segment ${i + 1}: ${segmentLabels[i] || segmentLabels[segmentLabels.length - 1]}`
-//   ).join('\n');
-
-//   const userPrompt = `User idea: "${prompt}"
-
-// Write EXACTLY ${scriptCount} segment(s) for a ${videoDuration} video.
-
-// ${scriptCount === 1
-//   ? `Write 1 segment describing the scene cinematically.`
-//   : `All segments must feel like ONE continuous shot — same scene, same subject, same lighting.\n${segmentExamples}`
-// }
-
-// ${audioType === 'narrator' && voiceOver?.trim()
-//   ? `User has provided narrator dialogue: "${voiceOver.trim()}"
-// Split it naturally across ${scriptCount} segment(s) — DO NOT change any words, just distribute across segments.`
-//   : !needsGeneratedVO
-//     ? `User has provided their own voiceover: "${voiceOver!.trim()}"
-// Split it evenly across ${scriptCount} segment(s) — do NOT change the words, just distribute naturally.`
-//     : `Generate a natural advertisement-style voiceover for each segment.`
-// }
-
-// Output format (strictly follow, repeat per segment):
-// GENDER: [male|female]   ← only on very first line
-// SCRIPT: [scene here]
-// VOICEOVER: [narration or dialogue here]
-// START: [start second within this segment]
-// END: [end second within this segment]
-// ---SPLIT---`;
-
-//   const narratorVoiceMap: Record<string, string> = {
-//   female:       'Sarah, a female narrator, warm friendly voice, American accent, medium-high consistent pitch, close-mic style, professional advertisement voice',
-//   male:         'James, a male narrator with a deep, warm, smooth American accent, low consistent pitch, close-mic style, professional advertisement voice',
-//   old_lady:     'Eleanor, an older female narrator, warm wise storytelling voice, gentle American accent, slow deliberate pace, close-mic style',
-//   old_man:      'George, an older male narrator, rich gravelly authoritative voice, slow deliberate American accent, close-mic style',
-//   teen_girl:    'Mia, a teenage girl narrator, energetic fun upbeat voice, American accent, fast-paced cheerful delivery, close-mic style',
-//   teen_boy:     'Jake, a teenage boy narrator, casual playful voice, American accent, relaxed conversational tone, close-mic style',
-//   professional: 'Alex, a professional news anchor narrator, neutral polished voice, American accent, clear precise delivery, broadcast-style, close-mic',
-//   whispering:   'Soft intimate whispering voice, close-mic ASMR style, slow gentle pace, barely audible breath, soothing tone',
-// };
-
-
-//   try {
-//     this.logger.log(`🎬 Generating ${scriptCount} script(s) for ${videoDuration} | audioType: ${audioType}`);
-
-//     const response = await this.client.chat.completions.create({
-//       model: 'gpt-4o-mini',
-//       messages: [
-//         { role: 'system', content: systemPrompt },
-//         { role: 'user', content: userPrompt },
-//       ],
-//       temperature: 0.4,
-//       max_tokens: 1500,
-//     });
-
-//     const raw = response.choices[0]?.message?.content?.trim() || '';
-//     if (!raw) throw new Error('GPT returned empty response');
-
-//     const genderMatch = raw.match(/GENDER:\s*(male|female)/i);
-//     const genderDecided = (genderMatch?.[1]?.toLowerCase() as 'male' | 'female') || 'female';
-//     const narratorGender = narratorOverride
-//       ?? (genderDecided === 'male' ? narratorVoiceMap['male'] : narratorVoiceMap['female']);
-
-//     this.logger.log(`🎙️ Narrator: ${narratorGender.split(',')[0]} (${narratorOverride ? 'user selected' : 'GPT decided'})`);
-
-//     const cleanRaw = raw.replace(/GENDER:\s*(male|female)\s*\n?/i, '').trim();
-//     const segments = cleanRaw
-//       .split(/\n?---SPLIT---\n?/)
-//       .map(s => s.trim())
-//       .filter(s => s.length > 10);
-
-//     if (segments.length === 0) throw new Error('No segments parsed from GPT response');
-
-//     while (segments.length < scriptCount) {
-//       segments.push(segments[segments.length - 1]);
-//     }
-
-//     const userVoChunks = !needsGeneratedVO && audioType !== 'narrator'
-//       ? this.splitVoiceOver(voiceOver!.trim(), scriptCount)
-//       : null;
-
-//     let cumulativeTime = 0;
-
-//     const result: ScriptVoPair[] = segments.slice(0, scriptCount).map((seg, i) => {
-//       const scriptMatch = seg.match(/SCRIPT:\s*([\s\S]+?)(?=VOICEOVER:|START:|END:|$)/i);
-//       const voMatch     = seg.match(/VOICEOVER:\s*([\s\S]+?)(?=START:|END:|$)/i);
-//       const startMatch  = seg.match(/START:\s*([\d.]+)/i);
-//       const endMatch    = seg.match(/END:\s*([\d.]+)/i);
-
-//       const script  = scriptMatch?.[1]?.trim() || seg.trim();
-//       const voiceout = (userVoChunks
-//   ? (userVoChunks[i] || '')
-//   : (voMatch?.[1]?.trim() || ''))
-//   .replace(/^["']|["']$/g, '');
-
-//       const segDuration = durations[i] || 7;
-//       const localStart  = parseFloat(startMatch?.[1] ?? '1.0');
-//       const localEnd    = parseFloat(endMatch?.[1]   ?? String(segDuration - 0.5));
-//       const subtitleStart = parseFloat((cumulativeTime + localStart).toFixed(2));
-//       const subtitleEnd   = parseFloat((cumulativeTime + Math.min(localEnd, segDuration - 0.3)).toFixed(2));
-
-//       cumulativeTime += segDuration;
-
-//       this.logger.log(`📝 Script    ${i + 1}: ${script.substring(0, 80)}...`);
-//       this.logger.log(`🎙️ ${audioType === 'narrator' ? 'Narrator' : 'VoiceOver'} ${i + 1}: ${voiceout.substring(0, 60) || '(none)'}`);
-//       if (audioType !== 'narrator') {
-//         this.logger.log(`⏱️ Timing    ${i + 1}: ${subtitleStart}s → ${subtitleEnd}s`);
-//       }
-
-//       // ✅ KEY DIFFERENCE — narrator vs voiceover shape
-//       if (audioType === 'narrator') {
-//         return {
-//           script,
-//           narrator: voiceout,   // ✅ narrator field, no timing
-//         };
-//       }
-
-//       return {
-//         script,
-//         voiceOver: voiceout,    // ✅ voiceover field with timing
-//         narratorGender,
-//         subtitleStart,
-//         subtitleEnd,
-//       };
-//     });
-
-//     this.logger.log(`✅ ${result.length} script(s) ready | ${audioType}`);
-//     return result;
-
-//   } catch (error: any) {
-//     this.logger.error(`Script generation failed: ${error.message}`);
-//     this.logger.warn(`⚠️ Falling back to safe defaults`);
-
-//     const fallbackNarrator = narratorOverride ?? narratorVoiceMap['female'];
-//     const voChunks = this.splitVoiceOver(voiceOver?.trim() || '', scriptCount);
-//     let cumulativeTime = 0;
-
-//     return Array.from({ length: scriptCount }, (_, i) => {
-//       const segDuration = durations[i] || 7;
-//       const subtitleStart = parseFloat((cumulativeTime + 1.0).toFixed(2));
-//       const subtitleEnd   = parseFloat((cumulativeTime + segDuration - 0.5).toFixed(2));
-//       cumulativeTime += segDuration;
-
-//       // ✅ Fallback also respects audioType shape
-//       if (audioType === 'narrator') {
-//         return {
-//           script: prompt.trim(),
-//           narrator: voiceOver?.trim() || '',
-//         };
-//       }
-
-//       return {
-//         script: prompt.trim(),
-//         voiceOver: voChunks[i] || '',
-//         narratorGender: fallbackNarrator,
-//         subtitleStart,
-//         subtitleEnd,
-//       };
-//     });
-//   }
-// }
-
-
-// async generateVideoScripts(
-//   prompt: string,
-//   videoDuration: '8s' | '15s' | '30s',
-//   voiceOver?: string,
-//   narratorOverride?: string,
-//   audioType?: 'voiceover' | 'narrator',
-// ): Promise<ScriptVoPair[]> {
-
-//   const durationMap = { '8s': 1, '15s': 2, '30s': 4 };
-
-//   const segmentDurations: Record<string, number[]> = {
-//     '8s': [8],
-//     '15s': [8, 7],
-//     '30s': [8, 7, 7, 8],
-//   };
-
-//   const voiceWordTargets = {
-//     '8s': 10,
-//     '15s': 25,
-//     '30s': 55,
-//   };
-
-//   const scriptCount = durationMap[videoDuration] || 1;
-//   const durations = segmentDurations[videoDuration];
-//   const targetWords = voiceWordTargets[videoDuration];
-
-//   // ------------------------------------------------
-//   // Detect dialogue inside prompt
-//   // ------------------------------------------------
-
-//   if (!voiceOver?.trim()) {
-//     const match = prompt.match(/["“](.*?)["”]/);
-//     if (match) {
-//       voiceOver = match[1].trim();
-//     }
-//   }
-
-//   const needsGeneratedVO = !voiceOver?.trim();
-
-//   // ------------------------------------------------
-//   // SYSTEM PROMPT
-//   // ------------------------------------------------
-
-//   const systemPrompt = `You are a cinematic video script writer for AI video generation.
-
-// Write ${scriptCount} segments that together form ONE continuous shot.
-
-// Rules:
-// - No scene cuts
-// - Same environment, lighting, subject
-// - Only subtle camera movement
-// - Each SCRIPT must be 40–60 words
-
-// VOICEOVER RULE:
-
-// ${needsGeneratedVO
-// ? `Generate a natural spoken voiceover for the scene.
-
-// Length guide:
-// 8s video ≈ 10 words
-// 15s video ≈ 25 words
-// 30s video ≈ 50 words`
-// : `The user provided voice text.
-
-// Rewrite it so it sounds natural for spoken dialogue.
-// Keep the SAME meaning and emotion.
-
-// Adjust the length so it fits a ${videoDuration} video.
-
-// Target length ≈ ${targetWords} words.
-
-// You may:
-// - fix grammar
-// - expand slightly
-// - make it sound natural
-
-// Do NOT change the meaning.`}
-
-// Narration timing:
-// - Start after 1–2 seconds
-// - End 0.5s before segment ends
-
-// Output format:
-
-// GENDER: [male|female]
-// SCRIPT: ...
-// VOICEOVER: ...
-// START: ...
-// END: ...
-// ---SPLIT---`;
-
-//   // ------------------------------------------------
-//   // USER PROMPT
-//   // ------------------------------------------------
-
-//   const userPrompt = `User scene idea:
-// "${prompt}"
-
-// ${voiceOver
-// ? `User voice text:
-// "${voiceOver}"
-
-// Rewrite and adapt this voiceover to fit the ${videoDuration} duration naturally.`
-// : `Generate a voiceover narration matching the scene.`}
-
-// Write exactly ${scriptCount} segments.
-
-// Segments must feel like ONE continuous camera shot.`;
-
-//   const narratorVoiceMap: Record<string,string> = {
-
-//   female:
-//     'Sarah, young adult female narrator, warm friendly tone, clear American accent, medium-high consistent pitch, smooth pacing, close-mic studio recording, professional advertisement voice',
-
-//   male:
-//     'James, adult male narrator, deep warm confident tone, natural American accent, low consistent pitch, steady pacing, close-mic studio recording, professional commercial voice',
-
-//   old_lady:
-//     'Eleanor, elderly female storyteller narrator, warm wise tone, gentle American accent, slightly higher pitch with soft tremble, slow thoughtful pacing, close-mic storytelling style',
-
-//   old_man:
-//     'George, elderly male narrator, rich gravelly authoritative tone, classic American accent, low pitch, slow deliberate pacing, close-mic documentary narration style',
-
-//   teen_girl:
-//     'Mia, teenage girl narrator, energetic playful tone, bright American accent, higher pitch, fast lively pacing, close-mic casual social media style voice',
-
-//   teen_boy:
-//     'Jake, teenage boy narrator, relaxed playful tone, youthful American accent, medium pitch, casual conversational pacing, close-mic vlog style voice',
-
-//   professional:
-//     'Alex, professional news anchor narrator, neutral polished tone, standard American broadcast accent, medium consistent pitch, precise pacing, studio broadcast recording style',
-
-//   whispering:
-//     'soft whisper narrator voice, intimate ASMR tone, neutral American accent, very low volume, slow gentle pacing with breath detail, ultra close-mic recording style'
-// };
-
-//   try {
-
-//     const response = await this.client.chat.completions.create({
-//       model: 'gpt-4o-mini',
-//       messages: [
-//         { role:'system', content:systemPrompt },
-//         { role:'user', content:userPrompt }
-//       ],
-//       temperature:0.4,
-//       max_tokens:1200
-//     });
-
-//     const raw = response.choices[0]?.message?.content?.trim() || '';
-//     if (!raw) throw new Error('GPT returned empty');
-
-//     const genderMatch = raw.match(/GENDER:\s*(male|female)/i);
-//     const genderDecided = genderMatch?.[1]?.toLowerCase() || 'female';
-
-//     const narratorGender =
-//       narratorOverride
-//       ? narratorVoiceMap[narratorOverride] || narratorOverride
-//       : narratorVoiceMap[genderDecided];
-
-//     const cleanRaw = raw.replace(/GENDER:\s*(male|female)\s*/i,'').trim();
-
-//     const segments = cleanRaw
-//       .split(/\n?---SPLIT---\n?/)
-//       .map(s => s.trim())
-//       .filter(Boolean);
-
-//     while (segments.length < scriptCount) {
-//       segments.push(segments[segments.length - 1]);
-//     }
-
-//     let cumulativeTime = 0;
-
-//     const result: ScriptVoPair[] = segments.slice(0,scriptCount).map((seg,i)=>{
-
-//       const scriptMatch = seg.match(/SCRIPT:\s*([\s\S]+?)(?=VOICEOVER|START|END|$)/i);
-//       const voMatch = seg.match(/VOICEOVER:\s*([\s\S]+?)(?=START|END|$)/i);
-//       const startMatch = seg.match(/START:\s*([\d.]+)/i);
-//       const endMatch = seg.match(/END:\s*([\d.]+)/i);
-
-//       const script = scriptMatch?.[1]?.trim() || '';
-//       const voiceout = voMatch?.[1]?.trim() || '';
-
-//       const segDuration = durations[i];
-
-//       const localStart = parseFloat(startMatch?.[1] ?? '1.2');
-//       const localEnd = parseFloat(endMatch?.[1] ?? String(segDuration - 0.5));
-
-//       const subtitleStart =
-//         parseFloat((cumulativeTime + localStart).toFixed(2));
-
-//       const subtitleEnd =
-//         parseFloat((cumulativeTime + Math.min(localEnd,segDuration-0.3)).toFixed(2));
-
-//       cumulativeTime += segDuration;
-
-//       if (audioType === 'narrator') {
-//         return {
-//           script,
-//           narrator: voiceout
-//         };
-//       }
-
-//       return {
-//         script,
-//         voiceOver: voiceout,
-//         narratorGender,
-//         subtitleStart,
-//         subtitleEnd
-//       };
-
-//     });
-
-//     return result;
-
-//   }
-//   catch(err:any){
-
-//     const fallbackNarrator =
-//       narratorOverride || narratorVoiceMap['female'];
-
-//     return [{
-//       script: prompt,
-//       voiceOver: voiceOver || '',
-//       narratorGender: fallbackNarrator,
-//       subtitleStart:1,
-//       subtitleEnd:6
-//     }];
-
-//   }
-
-// }
-
-async generateVideoScripts(
-  prompt: string,
-  videoDuration: '8s' | '15s' | '30s',
-  voiceOver?: string,
-  narratorOverride?: string,
-  audioType?: 'voiceover' | 'narrator',
-): Promise<ScriptVoPair[]> {
-
-  // ─── Voice map ────────────────────────────────────────────────────────────
-  const NARRATOR_VOICE_MAP: Record<string, string> = {
-    female:       'Sarah, young adult female narrator, warm friendly tone, clear American accent, medium-high consistent pitch, smooth pacing, close-mic studio recording, professional advertisement voice',
-    male:         'James, adult male narrator, deep warm confident tone, natural American accent, low consistent pitch, steady pacing, close-mic studio recording, professional commercial voice',
-    old_lady:     'Eleanor, elderly female storyteller narrator, warm wise tone, gentle American accent, slightly higher pitch with soft tremble, slow thoughtful pacing, close-mic storytelling style',
-    old_man:      'George, elderly male narrator, rich gravelly authoritative tone, classic American accent, low pitch, slow deliberate pacing, close-mic documentary narration style',
-    teen_girl:    'Mia, teenage girl narrator, energetic playful tone, bright American accent, higher pitch, fast lively pacing, close-mic casual social media style voice',
-    teen_boy:     'Jake, teenage boy narrator, relaxed playful tone, youthful American accent, medium pitch, casual conversational pacing, close-mic vlog style voice',
-    professional: 'Alex, professional news anchor narrator, neutral polished tone, standard American broadcast accent, medium consistent pitch, precise pacing, studio broadcast recording style',
-    whispering:   'soft whisper narrator voice, intimate ASMR tone, neutral American accent, very low volume, slow gentle pacing with breath detail, ultra close-mic recording style',
-  };
-
-  // ─── Official Veo 3.1 audio builders ─────────────────────────────────────
-  // Based on official guide: use SFX: and Ambient noise: tags
-  // NOT "AUDIO:" block — Veo doesn't parse that as a command
-
-  const detectSceneMusic = (scenePrompt: string): string => {
-    const p = scenePrompt.toLowerCase();
-    if (/\b(nature|landscape|forest|mountain|ocean|beach|river|wheat|field|sunset|sunrise|sky|meadow|valley|lake|waterfall|flower|garden|rain|snow)\b/.test(p))
-      return 'soft acoustic guitar and gentle orchestral strings, peaceful and serene';
-    if (/\b(baby|infant|child|children|family|mother|father|parent|care|gentle|tender|love|nurture)\b/.test(p))
-      return 'soft piano melody, gentle lullaby-style, warm and tender';
-    if (/\b(product|brand|launch|advertisement|promo|shampoo|cream|lotion|soap|drink|soda|beverage|coffee|food|fashion)\b/.test(p))
-      return ' modern and positive';
-    if (/\b(tech|technology|ai|robot|future|futuristic|space|spacecraft|galaxy|nebula|digital|innovation|startup)\b/.test(p))
-      return 'modern electronic ambient music, futuristic synth tones, cinematic';
-    if (/\b(action|sport|run|race|energy|power|fast|speed|extreme|workout|fitness|battle|fight)\b/.test(p))
-      return 'energetic cinematic music, driving rhythm, high-energy percussion';
-    if (/\b(story|documentary|journey|memory|emotional|inspire|dream|hope|reflect|life|chapter)\b/.test(p))
-      return 'emotional cinematic score, soft piano with orchestral swells, heartfelt';
-    if (/\b(city|street|urban|cafe|restaurant|lifestyle|modern|contemporary)\b/.test(p))
-      return 'smooth lo-fi or jazz, urban and stylish, relaxed energy';
-    return 'soft cinematic orchestral score, gentle and atmospheric';
-  };
-
-  // Official Veo 3.1 SFX format for music
-  const buildMusicSFX = (scenePrompt: string, hasVoice: boolean): string => {
-    const music = detectSceneMusic(scenePrompt);
+  private async concatenateClipsFromGcs(gcsPaths: string[]): Promise<string> {
+    const tempDir = path.join(os.tmpdir(), `concat-${Date.now()}`);
+    await fs.promises.mkdir(tempDir, { recursive: true });
+    this.logger.log(`🗂️ Concat temp dir: ${tempDir}`);
+
+    const localPaths: string[] = [];
+    const bucket = this.storage.bucket(CONFIG.GCP.BUCKET);
+
+    try {
+      for (let i = 0; i < gcsPaths.length; i++) {
+        const localPath = path.join(tempDir, `clip_${i}.mp4`);
+        this.logger.log(`⬇️ Downloading clip ${i + 1} from GCS: ${gcsPaths[i]}`);
+        await bucket.file(gcsPaths[i]).download({ destination: localPath });
+        const stat = fs.statSync(localPath);
+        this.logger.log(`✅ Downloaded clip ${i + 1}: ${localPath} (${stat.size} bytes)`);
+        localPaths.push(localPath);
+      }
+
+      const outputPath = path.join(tempDir, 'output.mp4');
+      await this.ffmpegConcat(localPaths, outputPath);
+
+      const gcsPath = `generated-videos/${Date.now()}-concat.mp4`;
+      await bucket.upload(outputPath, { destination: gcsPath, contentType: 'video/mp4' });
+
+      return gcsPath;
+    } finally {
+      for (const p of [...localPaths, path.join(tempDir, 'output.mp4')]) {
+        try { await fs.promises.unlink(p); } catch {}
+      }
+      try { await fs.promises.rmdir(tempDir); } catch {}
+    }
+  }
+
+  private ffmpegConcat(inputs: string[], output: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const listPath = output.replace('.mp4', '_list.txt');
+      const listContent = inputs
+        .map(p => `file '${p.replace(/\\/g, '/').replace(/'/g, "'\\''")}'`)
+        .join('\n');
+      fs.writeFileSync(listPath, listContent, 'utf8');
+      this.logger.log(`FFmpeg concat list:\n${listContent}`);
+
+      ffmpeg()
+        .input(listPath)
+        .inputOptions(['-f', 'concat', '-safe', '0'])
+        .outputOptions(['-c', 'copy'])
+        .output(output)
+        .on('start', cmd => this.logger.log(`FFmpeg concat started: ${cmd}`))
+        .on('error', (err) => {
+          try { fs.unlinkSync(listPath); } catch {}
+          this.logger.error(`FFmpeg concat error: ${err.message}`);
+          reject(err);
+        })
+        .on('end', () => {
+          try { fs.unlinkSync(listPath); } catch {}
+          this.logger.log(`FFmpeg concat done → ${output}`);
+          resolve();
+        })
+        .run();
+    });
+  }
+
+  async generateVideoScripts(
+    prompt: string,
+    videoDuration: '8s' | '15s' | '30s',
+    voiceOver?: string,
+    narratorOverride?: string,
+    audioType?: 'voiceover' | 'narrator',
+  ): Promise<ScriptVoPair[]> {
+
+    // ─── Voice map ────────────────────────────────────────────────────────────
+    const NARRATOR_VOICE_MAP: Record<string, string> = {
+      female:       'Sarah, young adult female narrator, warm friendly tone, clear American accent, medium-high consistent pitch, smooth pacing, close-mic studio recording, professional advertisement voice',
+      male:         'James, adult male narrator, deep warm confident tone, natural American accent, low consistent pitch, steady pacing, close-mic studio recording, professional commercial voice',
+      old_lady:     'Eleanor, elderly female storyteller narrator, warm wise tone, gentle American accent, slightly higher pitch with soft tremble, slow thoughtful pacing, close-mic storytelling style',
+      old_man:      'George, elderly male narrator, rich gravelly authoritative tone, classic American accent, low pitch, slow deliberate pacing, close-mic documentary narration style',
+      teen_girl:    'Mia, teenage girl narrator, energetic playful tone, bright American accent, higher pitch, fast lively pacing, close-mic casual social media style voice',
+      teen_boy:     'Jake, teenage boy narrator, relaxed playful tone, youthful American accent, medium pitch, casual conversational pacing, close-mic vlog style voice',
+      professional: 'Alex, professional news anchor narrator, neutral polished tone, standard American broadcast accent, medium consistent pitch, precise pacing, studio broadcast recording style',
+      whispering:   'soft whisper narrator voice, intimate ASMR tone, neutral American accent, very low volume, slow gentle pacing with breath detail, ultra close-mic recording style',
+    };
+
+    const detectSceneMusic = (scenePrompt: string): string => {
+      const p = scenePrompt.toLowerCase();
+      if (/\b(nature|landscape|forest|mountain|ocean|beach|river|wheat|field|sunset|sunrise|sky|meadow|valley|lake|waterfall|flower|garden|rain|snow)\b/.test(p))
+        return 'soft acoustic guitar and gentle orchestral strings, peaceful and serene';
+      if (/\b(baby|infant|child|children|family|mother|father|parent|care|gentle|tender|love|nurture)\b/.test(p))
+        return 'soft piano melody, gentle lullaby-style, warm and tender';
+      if (/\b(product|brand|launch|advertisement|promo|shampoo|cream|lotion|soap|drink|soda|beverage|coffee|food|fashion)\b/.test(p))
+        return 'modern and positive';
+      if (/\b(tech|technology|ai|robot|future|futuristic|space|spacecraft|galaxy|nebula|digital|innovation|startup)\b/.test(p))
+        return 'modern electronic ambient music, futuristic synth tones, cinematic';
+      if (/\b(action|sport|run|race|energy|power|fast|speed|extreme|workout|fitness|battle|fight)\b/.test(p))
+        return 'energetic cinematic music, driving rhythm, high-energy percussion';
+      if (/\b(story|documentary|journey|memory|emotional|inspire|dream|hope|reflect|life|chapter)\b/.test(p))
+        return 'emotional cinematic score, soft piano with orchestral swells, heartfelt';
+      if (/\b(city|street|urban|cafe|restaurant|lifestyle|modern|contemporary)\b/.test(p))
+        return 'smooth lo-fi or jazz, urban and stylish, relaxed energy';
+      return 'soft cinematic orchestral score, gentle and atmospheric';
+    };
+
+    const buildMusicSFX = (scenePrompt: string, hasVoice: boolean): string => {
+      const music = detectSceneMusic(scenePrompt);
       return `Ambient noise: subtle natural sounds of the scene.\nSFX: ${music}, very soft and subtle, low volume background only.`;
-    // if (hasVoice) {
-    //   return `SFX: ${music} plays softly in the background under the narration.`;
-    // }
-    // return `SFX: ${music} plays. Ambient noise: natural sounds of the scene.`;
-  };
+    };
 
-  // ─── Scene-type detection ─────────────────────────────────────────────────
-  const HOST_SCENE_RE = /\b(host|presenter|anchor|spokesperson|talking[\s-]head|professional\s+speaking|person\s+talking|man\s+speaking|woman\s+speaking|interview)\b/i;
-  const NON_HOST_RE   = /\b(baby|infant|child|product|bottle|shampoo|cream|lotion|soap|nature|landscape|ocean|beach|mountain|forest|river|animal|pet|car|vehicle|food|coffee|cafe|restaurant|city|street|building|flower|plant|sky|sunset|sunrise|soda|drink|beverage|wheat|field)\b/i;
-  const isHostScene   = HOST_SCENE_RE.test(prompt) && !NON_HOST_RE.test(prompt);
+    const HOST_SCENE_RE = /\b(host|presenter|anchor|spokesperson|talking[\s-]head|professional\s+speaking|person\s+talking|man\s+speaking|woman\s+speaking|interview)\b/i;
+    const NON_HOST_RE   = /\b(baby|infant|child|product|bottle|shampoo|cream|lotion|soap|nature|landscape|ocean|beach|mountain|forest|river|animal|pet|car|vehicle|food|coffee|cafe|restaurant|city|street|building|flower|plant|sky|sunset|sunrise|soda|drink|beverage|wheat|field)\b/i;
+    const isHostScene   = HOST_SCENE_RE.test(prompt) && !NON_HOST_RE.test(prompt);
 
-  // ─── Config maps ──────────────────────────────────────────────────────────
-  const durationMap: Record<string, number> = { '8s': 1, '15s': 2, '30s': 4 };
-  const segmentDurations: Record<string, number[]> = {
-    '8s':  [8],
-    '15s': [8, 7],
-    '30s': [8, 7, 7, 8],
-  };
-  const wordsPerSegment: Record<string, number> = {
-    '8s':  18,
-    '15s': 18,
-    '30s': 18,
-  };
+    const durationMap: Record<string, number> = { '8s': 1, '15s': 2, '30s': 4 };
+    const segmentDurations: Record<string, number[]> = { '8s': [8], '15s': [8, 7], '30s': [8, 7, 7, 8] };
+    const wordsPerSegment: Record<string, number> = { '8s': 18, '15s': 18, '30s': 18 };
 
-  const scriptCount  = durationMap[videoDuration]  ?? 1;
-  const durations    = segmentDurations[videoDuration] ?? [8];
-  const targetPerSeg = wordsPerSegment[videoDuration]  ?? 28;
-  const totalTarget  = targetPerSeg * scriptCount;
+    const scriptCount  = durationMap[videoDuration]  ?? 1;
+    const durations    = segmentDurations[videoDuration] ?? [8];
+    const targetPerSeg = wordsPerSegment[videoDuration]  ?? 28;
+    const totalTarget  = targetPerSeg * scriptCount;
 
-  // ─── Normalize gender key ─────────────────────────────────────────────────
-  const normalizeGender = (g: string): string =>
-    g.replace(/oldlady/i, 'old_lady')
-     .replace(/oldman/i,  'old_man')
-     .toLowerCase()
-     .trim();
+    const normalizeGender = (g: string): string =>
+      g.replace(/oldlady/i, 'old_lady').replace(/oldman/i, 'old_man').toLowerCase().trim();
 
-  // ─── Extract dialogue embedded in prompt quotes ───────────────────────────
-  if (!voiceOver?.trim()) {
-    const match = prompt.match(/[\u201c\u201d""](.*?)[\u201c\u201d""]/s);
-    if (match?.[1]) voiceOver = match[1].trim();
-  }
-
-  const hasUserVO   = !!(voiceOver?.trim());
-  const cleanUserVO = voiceOver?.trim() ?? '';
-
-  // ─── Pre-split user voiceover — never rewrite user's own script ───────────
-  const splitText = (text: string, count: number): string[] => {
-    if (count <= 1) return [text];
-    const words     = text.split(/\s+/).filter(Boolean);
-    const chunkSize = Math.ceil(words.length / count);
-    const chunks: string[] = [];
-    for (let i = 0; i < count; i++) {
-      const chunk = words.slice(i * chunkSize, (i + 1) * chunkSize).join(' ');
-      if (chunk) chunks.push(chunk);
+    if (!voiceOver?.trim()) {
+      const match = prompt.match(/[\u201c\u201d""](.*?)[\u201c\u201d""]/s);
+      if (match?.[1]) voiceOver = match[1].trim();
     }
-    while (chunks.length < count) chunks.push(chunks[chunks.length - 1] ?? '');
-    return chunks;
-  };
 
-  const preSplitVO: string[] = hasUserVO ? splitText(cleanUserVO, scriptCount) : [];
+    const hasUserVO   = !!(voiceOver?.trim());
+    const cleanUserVO = voiceOver?.trim() ?? '';
 
-  // ─── System prompt ────────────────────────────────────────────────────────
-  const voiceoverInstructions = hasUserVO
-    ? `The user has provided their own voiceover/narration text. Output it EXACTLY as given — word for word.
+    const splitText = (text: string, count: number): string[] => {
+      if (count <= 1) return [text];
+      const words     = text.split(/\s+/).filter(Boolean);
+      const chunkSize = Math.ceil(words.length / count);
+      const chunks: string[] = [];
+      for (let i = 0; i < count; i++) {
+        const chunk = words.slice(i * chunkSize, (i + 1) * chunkSize).join(' ');
+        if (chunk) chunks.push(chunk);
+      }
+      while (chunks.length < count) chunks.push(chunks[chunks.length - 1] ?? '');
+      return chunks;
+    };
+
+    const preSplitVO: string[] = hasUserVO ? splitText(cleanUserVO, scriptCount) : [];
+
+    const voiceoverInstructions = hasUserVO
+      ? `The user has provided their own voiceover/narration text. Output it EXACTLY as given — word for word.
 - Do NOT paraphrase, shorten, improve, or reorder the words
 - Do NOT add or remove any words
 - Each segment voiceover is supplied below — copy it verbatim to the VOICEOVER field`
-    : `Generate natural spoken voiceover for the scene.
+      : `Generate natural spoken voiceover for the scene.
 - Approximately ${targetPerSeg} words per segment (~3.5 words/sec pace)
 - Warm, conversational, natural advertisement narration tone
 - Each segment must flow smoothly and continue from the previous one`;
 
-  const systemPrompt = `You are a cinematic video script writer for Google Veo 3.1 AI video generation.
+    const systemPrompt = `You are a cinematic video script writer for Google Veo 3.1 AI video generation.
 
 Veo 3.1 prompt formula: [Cinematography] + [Subject] + [Action] + [Context] + [Style & Ambiance]
 
@@ -2712,15 +2070,11 @@ CONTINUITY RULES:
 
 ENDING RULES:
 - Last segment MUST end naturally — slow camera pull-back, subject settles, gentle fade
-- For product shots: camera slowly pulls back revealing full product, holds still
-- For nature/landscape: camera gently slows to a still, peaceful hold
-- For host scenes: host gives final confident nod, camera holds steady
 - NEVER end on motion — always settle into a calm final frame
-
 
 SCRIPT RULES:
 - Each SCRIPT = 40–60 words following Veo's formula: cinematography + subject + action + context + style
-- IMPORTANT: Stay FAITHFUL to the user's scene — preserve all key subjects, objects, and setting
+- Stay FAITHFUL to the user's scene — preserve all key subjects, objects, and setting
 - Enrich with cinematic language only — do NOT change the core scene idea
 - Do NOT include dialogue, audio, or SFX tags inside SCRIPT — visuals only
 
@@ -2739,275 +2093,190 @@ START: [float]
 END: [float]
 ---SPLIT---`;
 
-  // ─── User prompt ──────────────────────────────────────────────────────────
-  const userLines: string[] = [
-    `Scene: "${prompt}"`,
-    '',
-    `Write exactly ${scriptCount} segment(s) as ONE continuous shot.`,
-    `Preserve the user's exact scene — only add cinematic detail, do not change subject or setting.`,
-  ];
-
-  if (hasUserVO && scriptCount === 1) {
-    userLines.push('', `EXACT voiceover (copy word-for-word): "${cleanUserVO}"`);
-  } else if (hasUserVO && scriptCount > 1) {
-    userLines.push('', 'EXACT voiceover per segment (copy word-for-word):');
-    preSplitVO.forEach((line, i) => {
-      userLines.push(`  Segment ${i + 1}: "${line}"`);
-    });
-  } else {
-    userLines.push('', `Generate voiceover: ~${totalTarget} words total, split evenly across ${scriptCount} segment(s).`);
-  }
-
-  // ─── GPT call ─────────────────────────────────────────────────────────────
-  try {
-    const response = await this.client.chat.completions.create({
-      model:       'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: systemPrompt         },
-        { role: 'user',   content: userLines.join('\n') },
-      ],
-      temperature: 0.3,
-      max_tokens:  1400,
-    });
-
-    const raw = response.choices[0]?.message?.content?.trim() ?? '';
-    if (!raw) throw new Error('GPT returned empty response');
-
-    // ─── Resolve narrator voice ────────────────────────────────────────────
-    const gptGenderMatch = raw.match(/GENDER:\s*(male|female)/i);
-    const gptGender      = gptGenderMatch?.[1]?.toLowerCase() ?? 'female';
-    const narratorGender: string =
-      narratorOverride && narratorOverride.length > 20
-        ? narratorOverride
-        : (NARRATOR_VOICE_MAP[normalizeGender(narratorOverride ?? gptGender)]
-           ?? NARRATOR_VOICE_MAP['female']);
-
-    // ─── Parse segments ────────────────────────────────────────────────────
-    const cleanRaw = raw.replace(/GENDER:\s*(male|female)\s*/gi, '').trim();
-    const segments = cleanRaw
-      .split(/\n?---SPLIT---\n?/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-
-    if (segments.length < scriptCount) {
-      throw new Error(`GPT returned ${segments.length} segment(s), expected ${scriptCount}.`);
-    }
-
-    // ─── Build ScriptVoPair array ──────────────────────────────────────────
-    let cumulativeTime = 0;
-
-    const result: ScriptVoPair[] = segments.slice(0, scriptCount).map((seg, i) => {
-      const scriptMatch = seg.match(/SCRIPT:\s*([\s\S]+?)(?=VOICEOVER:|START:|END:|$)/i);
-      const voMatch     = seg.match(/VOICEOVER:\s*([\s\S]+?)(?=START:|END:|$)/i);
-      const startMatch  = seg.match(/START:\s*([\d.]+)/i);
-      const endMatch    = seg.match(/END:\s*([\d.]+)/i);
-
-      const visualScene = scriptMatch?.[1]?.trim() ?? prompt;
-
-      // Always prefer user's original VO — GPT version is discarded
-      const rawSpoken  = (hasUserVO && preSplitVO[i])
-        ? preSplitVO[i]
-        : (voMatch?.[1]?.trim() ?? '');
-      const spokenLine = rawSpoken
-        .replace(/^[\u201c\u201d"']+|[\u201c\u201d"']+$/g, '')
-        .trim();
-
-      const segDuration  = durations[i] ?? 8;
-      const isExtension  = i > 0;
-      const isLast       = i === scriptCount - 1;
-
-      const rawStart   = parseFloat(startMatch?.[1] ?? '1.2');
-      const rawEnd     = parseFloat(endMatch?.[1]   ?? String(segDuration - 0.5));
-      const localStart = Math.min(Math.max(rawStart, 2.0), 3.0);
-      const localEnd   = Math.min(Math.max(rawEnd,   1.0), segDuration - 2.0);
-
-      const subtitleStart = parseFloat((cumulativeTime + localStart).toFixed(2));
-      const subtitleEnd   = parseFloat((cumulativeTime + localEnd).toFixed(2));
-      cumulativeTime += segDuration;
-
-      // ─── Build Veo 3.1 official format prompt ─────────────────────────
-      const parts: string[] = [];
-
-      if (isExtension) {
-        parts.push('CONTINUING FROM PREVIOUS CLIP. Same scene, same lighting, same framing.');
-        parts.push('');
-      }
-
-      // [Cinematography] + [Subject+Action+Context] + [Style]
-      const VEO_CAMERA = 'Medium close-up shot, eye level, 35mm lens, shallow depth of field';
-      const characterPart = isHostScene
-        ? ' A professional host at a clean minimal desk, blurred dark background.'
-        : '';
-      parts.push(`${VEO_CAMERA}.${characterPart} ${visualScene}`);
-      parts.push('');
-
-      if (isLast) {
-  if (scriptCount === 1) {
-    // 8s — single clip ending
-    parts.push('End with a slow gentle camera hold on the subject. Natural calm finish.');
-  } else {
-    // 15s/30s — final extension clip ending  
-    parts.push('FINAL SEGMENT. Camera slowly pulls back and settles. Scene comes to a peaceful natural close. No abrupt stop.');
-  }
-  parts.push('');
-}
-
-      // Official Veo 3.1 dialogue format — quotation marks with speaker tag
-      // if (spokenLine) {
-      //   const endingNote = (isLast && isHostScene)
-      //     ? ' The narrator finishes, gives a confident slight nod to camera, holds eye contact for 1 second.'
-      //     : '';
-      //   if (isHostScene) {
-      //     // On-screen lip sync — "A [person] says, ..." format per official guide
-      //     parts.push(`The host says, "${spokenLine}"${endingNote}`);
-      //   } else {
-      //     // Off-screen narrator — official format: speaker description + quoted line
-      //     parts.push(`A ${narratorGender.split(',')[0]} says in voiceover, "${spokenLine}"${endingNote}`);
-      //   }
-      //   parts.push('');
-      // }
-
-      // Official SFX + Ambient format
-      parts.push(buildMusicSFX(prompt, !!spokenLine && audioType !== undefined));
-
-      // VOICE tag for Samba's TTS pipeline (not sent to Veo — used internally)
-      // parts.push(`VOICE: ${narratorGender}`);
-
-      // Style & Ambiance — inline at end per official formula
-      const style = isHostScene
-        ? 'Cinematic realism, sharp focus on face, natural skin texture, soft key light.'
-        : 'Cinematic realism, photorealistic, soft natural lighting, shallow depth of field.';
-      parts.push(style);
-
-      const fullVeoPrompt = parts.join('\n').trim();
-
-      return {
-        script:         fullVeoPrompt,
-        voiceOver:      audioType === 'voiceover' ? spokenLine : '',
-        narrator:       audioType === 'narrator'  ? spokenLine : '',
-        narratorGender,
-        subtitleStart,
-        subtitleEnd,
-        isExtension,
-        isLast,
-      };
-    });
-
-    return result;
-
-  } catch (err: any) {
-    this.logger.warn(`⚠️ generateVideoScripts fallback triggered: ${err.message}`);
-
-    const fallbackNarrator =
-      narratorOverride && narratorOverride.length > 20
-        ? narratorOverride
-        : (NARRATOR_VOICE_MAP[normalizeGender(narratorOverride ?? 'female')]
-           ?? NARRATOR_VOICE_MAP['female']);
-
-    const fallbackVO   = cleanUserVO;
-    const segDur       = durations[0] ?? 8;
-    const VEO_CAMERA   = 'Medium close-up shot, eye level, 35mm lens, shallow depth of field';
-    const charPart     = isHostScene ? ' A professional host at a clean minimal desk.' : '';
-    const style        = isHostScene
-      ? 'Cinematic realism, sharp focus on face, natural skin texture, soft key light.'
-      : 'Cinematic realism, photorealistic, soft natural lighting, shallow depth of field.';
-
-    const fallbackParts: string[] = [
-      `${VEO_CAMERA}.${charPart} ${prompt}`,
+    const userLines: string[] = [
+      `Scene: "${prompt}"`,
       '',
+      `Write exactly ${scriptCount} segment(s) as ONE continuous shot.`,
+      `Preserve the user's exact scene — only add cinematic detail, do not change subject or setting.`,
     ];
 
-    // if (fallbackVO) {
-    //   if (isHostScene) {
-    //     fallbackParts.push(`The host says, "${fallbackVO}"`);
-    //   } else {
-    //     fallbackParts.push(`A ${fallbackNarrator.split(',')[0]} says in voiceover, "${fallbackVO}"`);
-    //   }
-    //   fallbackParts.push('');
-    // }
+    if (hasUserVO && scriptCount === 1) {
+      userLines.push('', `EXACT voiceover (copy word-for-word): "${cleanUserVO}"`);
+    } else if (hasUserVO && scriptCount > 1) {
+      userLines.push('', 'EXACT voiceover per segment (copy word-for-word):');
+      preSplitVO.forEach((line, i) => userLines.push(`  Segment ${i + 1}: "${line}"`));
+    } else {
+      userLines.push('', `Generate voiceover: ~${totalTarget} words total, split evenly across ${scriptCount} segment(s).`);
+    }
 
-    fallbackParts.push(buildMusicSFX(prompt, !!fallbackVO && audioType !== undefined));
-    // fallbackParts.push(`VOICE: ${fallbackNarrator}`);
-    fallbackParts.push(style);
+    try {
+      this.logger.log(`🎬 Generating ${scriptCount} script(s) for ${videoDuration} video`);
 
-    return [{
-      script:         fallbackParts.join('\n').trim(),
-      voiceOver:      audioType === 'voiceover' ? fallbackVO : '',
-      narrator:       audioType === 'narrator'  ? fallbackVO : '',
-      narratorGender: fallbackNarrator,
-      subtitleStart:  1.0,
-      subtitleEnd:    segDur - 0.5,
-      isExtension:    false,
-      isLast:         true,
-    }];
+      const response = await this.client.chat.completions.create({
+        model:       'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user',   content: userLines.join('\n') },
+        ],
+        temperature: 0.3,
+        max_tokens:  1400,
+      });
+
+      const raw = response.choices[0]?.message?.content?.trim() ?? '';
+      if (!raw) throw new Error('GPT returned empty response');
+
+      const gptGenderMatch = raw.match(/GENDER:\s*(male|female)/i);
+      const gptGender      = gptGenderMatch?.[1]?.toLowerCase() ?? 'female';
+      const narratorGender: string =
+        narratorOverride && narratorOverride.length > 20
+          ? narratorOverride
+          : (NARRATOR_VOICE_MAP[normalizeGender(narratorOverride ?? gptGender)] ?? NARRATOR_VOICE_MAP['female']);
+
+      const cleanRaw = raw.replace(/GENDER:\s*(male|female)\s*/gi, '').trim();
+      const segments = cleanRaw
+        .split(/\n?---SPLIT---\n?/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      if (segments.length < scriptCount) {
+        throw new Error(`GPT returned ${segments.length} segment(s), expected ${scriptCount}.`);
+      }
+
+      let cumulativeTime = 0;
+
+      const result: ScriptVoPair[] = segments.slice(0, scriptCount).map((seg, i) => {
+        const scriptMatch = seg.match(/SCRIPT:\s*([\s\S]+?)(?=VOICEOVER:|START:|END:|$)/i);
+        const voMatch     = seg.match(/VOICEOVER:\s*([\s\S]+?)(?=START:|END:|$)/i);
+        const startMatch  = seg.match(/START:\s*([\d.]+)/i);
+        const endMatch    = seg.match(/END:\s*([\d.]+)/i);
+
+        const visualScene = scriptMatch?.[1]?.trim() ?? prompt;
+        const rawSpoken   = (hasUserVO && preSplitVO[i]) ? preSplitVO[i] : (voMatch?.[1]?.trim() ?? '');
+        const spokenLine  = rawSpoken.replace(/^[\u201c\u201d"']+|[\u201c\u201d"']+$/g, '').trim();
+
+        const segDuration  = durations[i] ?? 8;
+        const isExtension  = i > 0;
+        const isLast       = i === scriptCount - 1;
+
+        const rawStart   = parseFloat(startMatch?.[1] ?? '1.2');
+        const rawEnd     = parseFloat(endMatch?.[1]   ?? String(segDuration - 0.5));
+        const localStart = Math.min(Math.max(rawStart, 2.0), 3.0);
+        const localEnd   = Math.min(Math.max(rawEnd,   1.0), segDuration - 2.0);
+
+        const subtitleStart = parseFloat((cumulativeTime + localStart).toFixed(2));
+        const subtitleEnd   = parseFloat((cumulativeTime + localEnd).toFixed(2));
+        cumulativeTime += segDuration;
+
+        const parts: string[] = [];
+        if (isExtension) {
+          parts.push('CONTINUING FROM PREVIOUS CLIP. Same scene, same lighting, same framing.');
+          parts.push('');
+        }
+
+        const VEO_CAMERA = 'Medium close-up shot, eye level, 35mm lens, shallow depth of field';
+        const isHostScene = HOST_SCENE_RE.test(prompt) && !NON_HOST_RE.test(prompt);
+        const characterPart = isHostScene ? ' A professional host at a clean minimal desk, blurred dark background.' : '';
+        parts.push(`${VEO_CAMERA}.${characterPart} ${visualScene}`);
+        parts.push('');
+
+        if (isLast) {
+          parts.push(scriptCount === 1
+            ? 'End with a slow gentle camera hold on the subject. Natural calm finish.'
+            : 'FINAL SEGMENT. Camera slowly pulls back and settles. Scene comes to a peaceful natural close. No abrupt stop.');
+          parts.push('');
+        }
+
+        parts.push(buildMusicSFX(prompt, !!spokenLine && audioType !== undefined));
+        const style = isHostScene
+          ? 'Cinematic realism, sharp focus on face, natural skin texture, soft key light.'
+          : 'Cinematic realism, photorealistic, soft natural lighting, shallow depth of field.';
+        parts.push(style);
+
+        const fullVeoPrompt = parts.join('\n').trim();
+
+        return {
+          script:         fullVeoPrompt,
+          voiceOver:      audioType === 'voiceover' ? spokenLine : spokenLine,
+          narrator:       audioType === 'narrator'  ? spokenLine : '',
+          narratorGender,
+          subtitleStart,
+          subtitleEnd,
+          isExtension,
+          isLast,
+        };
+      });
+
+      this.logger.log(`✅ Generated ${result.length} script(s) for ${videoDuration}`);
+      return result;
+
+    } catch (err: any) {
+      this.logger.warn(`⚠️ generateVideoScripts fallback: ${err.message}`);
+
+      const fallbackNarrator =
+        narratorOverride && narratorOverride.length > 20
+          ? narratorOverride
+          : (NARRATOR_VOICE_MAP[normalizeGender(narratorOverride ?? 'female')] ?? NARRATOR_VOICE_MAP['female']);
+
+      const segDur     = durations[0] ?? 8;
+      const VEO_CAMERA = 'Medium close-up shot, eye level, 35mm lens, shallow depth of field';
+      const isHostScene = HOST_SCENE_RE.test(prompt) && !NON_HOST_RE.test(prompt);
+      const charPart   = isHostScene ? ' A professional host at a clean minimal desk.' : '';
+      const style      = isHostScene
+        ? 'Cinematic realism, sharp focus on face, natural skin texture, soft key light.'
+        : 'Cinematic realism, photorealistic, soft natural lighting, shallow depth of field.';
+
+      const fallbackParts = [
+        `${VEO_CAMERA}.${charPart} ${prompt}`,
+        '',
+        buildMusicSFX(prompt, !!cleanUserVO && audioType !== undefined),
+        style,
+      ];
+
+      return [{
+        script:         fallbackParts.join('\n').trim(),
+        voiceOver:      audioType === 'voiceover' ? cleanUserVO : cleanUserVO,
+        narrator:       audioType === 'narrator'  ? cleanUserVO : '',
+        narratorGender: fallbackNarrator,
+        subtitleStart:  1.0,
+        subtitleEnd:    segDur - 0.5,
+        isExtension:    false,
+        isLast:         true,
+      }];
+    }
   }
-}
 
 
 
-async enhancePrompt(
-  prompt: string,
-  type: string,
-  duration?: string,
-): Promise<string> {
+  async enhancePrompt(
+    prompt: string,
+    type: 'image' | 'video' | 'voiceover',
+    duration?: string,
+  ): Promise<string> {
+    const isVoice = type === 'voiceover';
+    const seconds = duration ? parseInt(duration) : null;
 
-  const isVoice = type === 'voiceover' || type === 'narrator';
+    const VOICEOVER_WORD_LIMITS: Record<number, number> = { 8: 10, 15: 14, 30: 18 };
+    const targetWords = seconds ? (VOICEOVER_WORD_LIMITS[seconds] ?? Math.round(seconds * 3.5)) : null;
+    const maxTokensForVoice = targetWords ? Math.ceil(targetWords * 1.4) + 15 : 60;
 
-  // ───────────────── Duration Parsing ─────────────────
-  // ───────────────── Duration Parsing ─────────────────
-const seconds = duration ? parseInt(duration) : null;
+    const videoWordLimit = seconds
+      ? seconds <= 8 ? 40 : seconds === 15 ? 70 : 120
+      : 150;
+    const maxTokensForVideo = Math.ceil(videoWordLimit * 1.5) + 30;
 
-// ✅ Match frontend word limits exactly
-const VOICEOVER_WORD_LIMITS: Record<number, number> = {
-  8: 10,
-  15: 14,
-  30: 18,
-};
-
-const targetWords = seconds
-  ? (VOICEOVER_WORD_LIMITS[seconds] ?? Math.round(seconds * 3.5))
-  : null;
-
-
-  const maxTokensForVoice = targetWords
-  ? Math.ceil(targetWords * 1.4) + 15  // tighter ceiling for voiceover
-  : 60;
-
-
-  const videoWordLimit = seconds
-    ? seconds <= 8
-      ? 40
-      : seconds === 15
-      ? 70
-      : 120
-    : 150;
-
-  const maxTokensForVideo = Math.ceil(videoWordLimit * 1.5) + 30;
-
-  // ───────────────── Duration Hints ─────────────────
-  const durationVoiceHint =
-  seconds && targetWords
-    ? `This script will be spoken over a ${seconds}-second video. You MUST write no more than ${targetWords} words. Count carefully before returning.`
-    : '';
-
-  const durationVideoHint = seconds
-    ? `This is a ${seconds}-second video. ${
-        seconds <= 8
-          ? 'Focus on one strong visual moment.'
-          : seconds === 15
-          ? 'Include light motion or 1–2 scene beats.'
+    const durationVideoHint = seconds
+      ? `This is a ${seconds}-second video. ${
+          seconds <= 8 ? 'Focus on one strong visual moment.'
+          : seconds === 15 ? 'Include light motion or 1–2 scene beats.'
           : 'Allow multiple cinematic beats and pacing changes.'
-      }`
-    : '';
+        }`
+      : '';
 
-  // ───────────────── System Prompt ─────────────────
-  let systemPrompt = '';
+    let systemPrompt = '';
 
- if (type === 'voiceover') {
-  systemPrompt = `
+    if (type === 'voiceover') {
+      systemPrompt = `
 You are a professional advertising copywriter specializing in short voiceover scripts.
-
-Your task is to enhance the given voiceover script.
 
 STRICT RULES:
 - You MUST return EXACTLY ${targetWords ?? 10} words or fewer — no exceptions
@@ -3015,34 +2284,14 @@ STRICT RULES:
 - Keep the same message, tone and intent
 - Improve rhythm, clarity and emotional delivery
 - Sound natural for spoken audio
-- Do NOT add scene directions
-- Do NOT change the topic
-- Do NOT add explanations or labels
+- Do NOT add scene directions or labels
 
 WORD LIMIT: ${targetWords ?? 10} words maximum.
 
 Return ONLY the script. Nothing else.
-`;
-}else if (type === 'narrator') {
-  const narratorHint = seconds
-    ? `This narration is for a ${seconds}-second video. Keep it natural and flowing — aim for around ${targetWords ?? 'a comfortable'} words.`
-    : '';
-
-  systemPrompt = `
-You are a cinematic narrator script editor.
-
-Rules:
-- Improve emotional impact and storytelling
-- Maintain the original meaning
-- Make the narration flow naturally
-- Avoid changing the story or message
-
-${narratorHint}
-
-Return ONLY the narration.
-`;
-} else {
-    systemPrompt = `
+`.trim();
+    } else {
+      systemPrompt = `
 You are a world-class AI prompt engineer for generative ${type} models.
 
 Rules:
@@ -3056,155 +2305,58 @@ ${durationVideoHint}
 Keep the result under ${videoWordLimit} words.
 
 Return ONLY the enhanced prompt.
-`;
-  }
-
-  // ───────────────── User Instruction ─────────────────
-  const instructionMap: Record<string, string> = {
-    image: `Enhance this image generation prompt:`,
-
-    video: `Enhance this ${seconds ? `${seconds}-second ` : ''}video prompt with cinematic detail:`,
-
-    voiceover: `Enhance this voiceover script:`,
-
-    narrator: `Enhance this narrator script:`,
-  };
-
-  const instruction =
-    instructionMap[type] ?? 'Enhance this prompt:';
-
-  this.logger.log(
-    `✨ Enhancing [${type}] ${seconds ? `[${seconds}s]` : ''} — ${prompt.substring(0, 60)}...`,
-  );
-
-  try {
-
-    const completion = await this.client.chat.completions.create({
-      model: 'gpt-4o-mini',
-      temperature: 0.3,
-      max_tokens: isVoice
-        ? maxTokensForVoice
-        : maxTokensForVideo,
-      messages: [
-        { role: 'system', content: systemPrompt.trim() },
-        { role: 'user', content: `${instruction}\n\n${prompt.trim()}` },
-      ],
-    });
-
-    const enhanced = completion.choices[0]?.message?.content?.trim();
-
-    if (!enhanced) {
-      throw new Error('GPT returned empty response');
+`.trim();
     }
 
-    // ───────────────── Safety Check ─────────────────
+    const instructionMap: Record<string, string> = {
+      image:     'Enhance this image generation prompt:',
+      video:     `Enhance this ${seconds ? `${seconds}-second ` : ''}video prompt with cinematic detail:`,
+      voiceover: 'Enhance this voiceover script:',
+    };
 
-    const clean = (text: string) =>
-      text
-        .toLowerCase()
-        .replace(/[^\w\s]/g, '')
-        .split(/\s+/)
-        .filter((w) => w.length > 3);
+    this.logger.log(`✨ Enhancing [${type}] ${seconds ? `[${seconds}s]` : ''} — ${prompt.substring(0, 60)}...`);
 
-    const originalWords = new Set(clean(prompt));
-    const enhancedWords = clean(enhanced);
+    try {
+      const completion = await this.client.chat.completions.create({
+        model: 'gpt-4o-mini',
+        temperature: 0.3,
+        max_tokens: isVoice ? maxTokensForVoice : maxTokensForVideo,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `${instructionMap[type] ?? 'Enhance this prompt:'}\n\n${prompt.trim()}` },
+        ],
+      });
 
-    const overlap = enhancedWords.filter((w) =>
-      originalWords.has(w),
-    ).length;
+      const enhanced = completion.choices[0]?.message?.content?.trim();
+      if (!enhanced) throw new Error('GPT returned empty response');
 
-    if (originalWords.size > 6 && overlap === 0) {
-      this.logger.warn(
-        '⚠️ Enhanced output drifted too far — returning original prompt',
-      );
+      const clean = (text: string) =>
+        text.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/).filter((w) => w.length > 3);
+      const originalWords = new Set(clean(prompt));
+      const enhancedWords = clean(enhanced);
+      const overlap = enhancedWords.filter((w) => originalWords.has(w)).length;
+
+      if (originalWords.size > 6 && overlap === 0) {
+        this.logger.warn('⚠️ Enhanced output drifted too far — returning original prompt');
+        return prompt.trim();
+      }
+
+      this.logger.log(`✅ Enhanced [${type}] — ${enhancedWords.length} words`);
+      return enhanced;
+    } catch (error: any) {
+      this.logger.error(`Enhance prompt failed: ${error.message}`);
       return prompt.trim();
     }
+  }
 
-    this.logger.log(
-      `✅ Enhanced [${type}] — ${enhancedWords.length} words`,
+  private splitVoiceOver(text: string, count: number): string[] {
+    if (!text.trim() || count <= 1) return Array(count).fill(text.trim());
+    const words = text.trim().split(/\s+/);
+    const chunkSize = Math.ceil(words.length / count);
+    return Array.from({ length: count }, (_, i) =>
+      words.slice(i * chunkSize, (i + 1) * chunkSize).join(' ')
     );
-
-    return enhanced;
-
-  } catch (error: any) {
-
-    this.logger.error(`Enhance prompt failed: ${error.message}`);
-
-    return prompt.trim();
   }
-}
-
-
-buildManualScriptPairs(
-  prompt: string,
-  voiceOver: string,
-  narratorGender: string,
-  videoDuration: '8s' | '15s' | '30s',
-): ScriptVoPair[] {
-  const segmentDurations: Record<string, number[]> = {
-    '8s':  [8],
-    '15s': [8, 7],
-    '30s': [8, 7, 7, 8],
-  };
-
-  const durations = segmentDurations[videoDuration] || [8];
-  const scriptCount = durations.length;
-
-  // ✅ Split voiceover proportionally by duration
-  const voChunks = voiceOver.trim()
-    ? this.splitVoiceOver(voiceOver.trim(), scriptCount)
-    : Array(scriptCount).fill('');
-
-  let cumulativeTime = 0;
-
-  return durations.map((segDuration, i) => {
-    const voText = voChunks[i] || '';
-
-    // ✅ Safe subtitle timing per segment
-    const localStart = 1.0;
-    const localEnd = segDuration - 0.5;
-
-    const subtitleStart = parseFloat((cumulativeTime + localStart).toFixed(2));
-    const subtitleEnd   = parseFloat((cumulativeTime + localEnd).toFixed(2));
-
-    cumulativeTime += segDuration;
-
-    this.logger.log(`📝 Segment ${i + 1}: prompt reused | VO: "${voText.substring(0, 60)}" | ${subtitleStart}s → ${subtitleEnd}s`);
-
-    return {
-      script: prompt,          // ✅ same prompt for all segments
-      voiceOver: voText, 
-      narrator:'', 
-      narratorGender,          // ✅ same voice locked for all segments
-      subtitleStart,
-      subtitleEnd,
-      isExtension: i > 0,         
-      isLast: i === durations.length - 1,  
-    };
-  });
-}
-
-
-
-private splitVoiceOver(text: string, count: number): string[] {
-  if (!text.trim() || count <= 1) return [text.trim(), ...Array(count - 1).fill('')];
-
-  const words = text.trim().split(/\s+/);
-  const result: string[] = [];
-  const base = Math.floor(words.length / count);
-  const remainder = words.length % count;
-  let index = 0;
-
-  for (let i = 0; i < count; i++) {
-    // ✅ Distribute remainder words to first chunks evenly
-    const size = base + (i < remainder ? 1 : 0);
-    result.push(words.slice(index, index + size).join(' '));
-    index += size;
-  }
-
-  return result;
-}
-
 
 
   async saveGeneratedVideoURLInDB(
@@ -3218,7 +2370,6 @@ private splitVoiceOver(text: string, count: number): string[] {
     source?: string,
     voiceOverText?: string,
     hasSubtitle?: boolean,
-    videoDuration?: string,
   ) {
     try {
       const result = await this.galleryModel.findOneAndUpdate(
@@ -3234,9 +2385,8 @@ private splitVoiceOver(text: string, count: number): string[] {
               imageURL: processedImageURL,
               generatedPrompt: generatedPrompt,
               source: source,
-              voiceOverText: voiceOverText || '',
+              voiceOverText: voiceOverText || undefined,
               hasSubtitle: hasSubtitle ?? false,
-              videoDuration: videoDuration || '',
             }
           }
         },
@@ -3253,230 +2403,86 @@ private splitVoiceOver(text: string, count: number): string[] {
     }
   }
 
-//   async fetchDomainInfoUsingAssistantAPI(
-//     domain: string, 
-//     language: string = 'English', 
-//     userId: string
-//   ): Promise<DomainInfo> {
-//     let lastError: any = null;
+  async fetchDomainInfoUsingAssistantAPI(
+    domain: string, 
+    language: string = 'English', 
+    userId: string
+  ): Promise<DomainInfo> {
+    let lastError: any = null;
 
-//     for (let attempt = 1; attempt <= CONFIG.MEDIA.MAX_RETRIES; attempt++) {
-//       try {
-//         const normalizedDomain = this.normalizeUrl(domain);
+    for (let attempt = 1; attempt <= CONFIG.MEDIA.MAX_RETRIES; attempt++) {
+      try {
+        const normalizedDomain = this.normalizeUrl(domain);
         
-//         const structuredData = await this.scrapeWebsiteMedia(normalizedDomain);
-//         const parsedData = JSON.parse(structuredData.data);
+        const structuredData = await this.scrapeWebsiteMedia(normalizedDomain);
+        const parsedData = JSON.parse(structuredData.data);
 
-//         const dirPath = path.resolve('.', 'structured_data');
-//         const filePath = path.join(dirPath, `${userId}.json`);
+        const dirPath = path.resolve('.', 'structured_data');
+        const filePath = path.join(dirPath, `${userId}.json`);
 
-//         if (!fs.existsSync(dirPath)) {
-//           fs.mkdirSync(dirPath, { recursive: true });
-//         }
+        if (!fs.existsSync(dirPath)) {
+          fs.mkdirSync(dirPath, { recursive: true });
+        }
 
-//         fs.writeFileSync(filePath, JSON.stringify(parsedData, null, 2), 'utf-8');
-//         const fileStream = fs.createReadStream(filePath);
+        fs.writeFileSync(filePath, JSON.stringify(parsedData, null, 2), 'utf-8');
+        const fileStream = fs.createReadStream(filePath);
 
-//         const file = await this.client.files.create({
-//           file: fileStream,
-//           purpose: "assistants"
-//         });
+        const file = await this.client.files.create({
+          file: fileStream,
+          purpose: "assistants"
+        });
 
-
-
-// const prompt = `Return ONLY valid JSON in the schema below.
-// Use ONLY the provided HTML.
-// Do NOT guess or add external information.
+// const prompt = `Return ONLY valid JSON in the schema below. Use ONLY the HTML provided. Do NOT guess or add external information.
 
 // Inputs:
-// - Language: ${language}
-// - Domain: ${normalizedDomain}
+// - Language: ${language} - Domain: ${normalizedDomain}
 
-// ========================
-// TASK
-// ========================
+// TASK 1 — Extract product + brand data:
+// - Parse all JSON-LD blocks (@type Product, Organization, Brand) including @graph.
+// - Extract product name, description, price, sku, features, currency, availability.
+// - Extract gallery images from: .product-gallery, .media-gallery, [data-gallery], hero sections near price or add-to-cart.
+// - Use only raster images (png, jpg, jpeg, webp, gif, avif). Resolve srcset or data-src.
+// - Extract video URLs from <video>, <source>, <iframe>, <embed>, og:video.
+// - Extract logo from JSON-LD "logo", or <img>/<picture> inside header/nav with class/id/alt containing logo|brand.
+// - Convert relative URLs to absolute using ${normalizedDomain}.
+// - If something does not exist in the HTML, return empty values.
 
-// 1. Extract brand_name from JSON-LD (Organization/Brand), header, footer, or logo section.
-// 2. Extract slogan if available.
-// 3. Extract logo_url from JSON-LD "logo" or header/nav image containing logo|brand.
-// 4. Extract image_urls from gallery, hero section, or near main content.
-//    - Only raster images (png, jpg, jpeg, webp, gif, avif).
-//    - Resolve srcset or data-src.
-//    - Convert relative URLs to absolute using ${normalizedDomain}.
+// TASK 2 — Generate content ONLY from extracted data:
+// - Write "about" (100–150 words) in ${language}.
+// - Write a "tagline" and "slogan" (≤12 words).
+// - "products_services": summarize about and product both from page content around 150 words.
+// - "cta_suggestions": 2–3 short CTAs in ${language}.
+// - "cultural_notes": relevance or tone of the brand.
 
-// 5. Identify the main PRODUCT or SERVICE.
-//    - Merge ALL details (name, description, features, pricing, benefits, availability)
-//      into ONE single formatted description field called "product_or_service".
-//    - Write it clearly (120–200 words) in ${language}.
-//    - Use only extracted HTML content.
-
-// If any data does not exist, return empty string "" or empty array [].
-
-// ========================
-// SCHEMA
-// ========================
-
+// SCHEMA:
 // {
+//   "about": "",
 //   "brand_name": "",
+//   "tagline": "",
+//   "audience": "",
 //   "slogan": "",
-//   "product_or_service": "",
+//   "products_services": [{ "name": "", "description": "" }],
+//   "style": "",
 //   "logo_url": "",
-//   "image_urls": []
+//   "image_urls": [],
+//   "video_urls": [],
+//   "cta_suggestions": [],
+//   "cultural_notes": "",
+//   "product": {
+//     "name": "",
+//     "description": "",
+//     "price": "",
+//     "currency": "",
+//     "sku": "",
+//     "brand": "",
+//     "features": [],
+//     "availability": ""
+//   }
 // }
 // `;
 
-//         const thread = await this.client.beta.threads.create({
-//           messages: [{
-//             role: "user",
-//             attachments: [{
-//               file_id: file.id,
-//               tools: [
-//                 { type: 'file_search' },
-//                 { type: "code_interpreter" }
-//               ]
-//             }],
-//             content: [{ type: "text", text: prompt.trim() }],
-//           }],
-//         });
 
-//         const run = await this.client.beta.threads.runs.create(thread.id, {
-//           assistant_id: process.env.ASSISTANT_ID as string
-//         });
-
-//         let runStatus = run;
-//         let pollCount = 0;
-
-//         while (runStatus.status !== "completed" && runStatus.status !== "failed" && pollCount < CONFIG.TIMEOUTS.ASSISTANT_POLL_MAX) {
-//           await new Promise((r) => setTimeout(r, 2000));
-//           runStatus = await this.client.beta.threads.runs.retrieve(run.id, { thread_id: thread.id });
-//           pollCount++;
-//         }
-
-//         if (runStatus.status === 'failed') throw new Error('OpenAI Assistant run failed');
-//         if (pollCount >= CONFIG.TIMEOUTS.ASSISTANT_POLL_MAX) throw new Error('OpenAI Assistant timeout');
-
-//         const messages = await this.client.beta.threads.messages.list(thread.id);
-//         const content = (messages.data[0].content[0] as any).text.value;
-       
-//         let parsed: any = {};
-//         try {
-//           parsed = JSON.parse(content);
-//         } catch {
-//           throw new Error('Failed to parse AI response');
-//         }
-
-//         const normalizeUrl = (url: string): string => {
-//           if (!url || typeof url !== 'string') return '';
-//           url = url.trim();
-
-//           if (url.startsWith('http://') || url.startsWith('https://')) return url;
-//           if (url.startsWith('//')) return 'https:' + url;
-//           if (url.startsWith('/')) {
-//             const baseUrl = normalizedDomain.replace(/\/$/, '');
-//             return baseUrl + url;
-//           }
-
-//           const baseUrl = normalizedDomain.replace(/\/$/, '');
-//           return baseUrl + '/' + url.replace(/^\.\//, '');
-//         };
-
-//         const validateAndNormalize = (urls: any[]): string[] => {
-//           if (!Array.isArray(urls)) return [];
-
-//           const uniqueUrls = new Set<string>();
-
-//           return urls
-//             .map(url => normalizeUrl(url))
-//             .filter(url => url && url.length > 0)
-//             .filter(url => {
-//               try {
-//                 const urlObj = new URL(url);
-//                 const pathname = urlObj.pathname.toLowerCase();
-
-//                 if (pathname.includes('.svg')) return false;
-
-//                 const hasAllowedExtension = CONFIG.MEDIA.VALID_IMAGE_EXTS.some(ext =>
-//                   pathname.includes(`.${ext}`)
-//                 );
-
-//                 const hasExtension = pathname.includes('.');
-//                 if (!hasExtension) return true;
-
-//                 return hasAllowedExtension;
-//               } catch {
-//                 return false;
-//               }
-//             })
-//             .filter(url => {
-//               if (uniqueUrls.has(url)) return false;
-//               uniqueUrls.add(url);
-//               return true;
-//             })
-//             .slice(0, CONFIG.MEDIA.MAX_IMAGES);
-//         };
-
-//         const processProductsServices = (products: any): string => {
-//           if (Array.isArray(products)) {
-//             return products.map(product => {
-//               if (typeof product === 'object' && product.name && product.description) {
-//                 return `${product.name}: ${product.description}`;
-//               }
-//               return typeof product === 'string' ? product : '';
-//             }).filter(p => p).join("");
-//           }
-
-//           return typeof products === 'string' ? products : '';
-//         };
-        
-//         const data: DomainInfo = {
-//           brandName: parsed.brand_name || "",
-//           slogan: parsed.slogan || "",
-//           products: processProductsServices(parsed.product_or_service),
-//           logoUrl: normalizeUrl(parsed.logo_url || ""),
-//           imageUrls: validateAndNormalize(parsed.image_urls || [])
-//         };
-//         this.logger.log('Data',data);
-//         return data;
-
-//       } catch (err: any) {
-//         lastError = err;
-//         this.logger.error(`Attempt ${attempt}/${CONFIG.MEDIA.MAX_RETRIES} failed: ${err.message}`);
-
-//         if (
-//           err.message?.includes('Invalid domain') ||
-//           err.message?.includes('Authentication') ||
-//           err.message?.includes('ASSISTANT_ID')
-//         ) {
-//           break;
-//         }
-
-//         if (attempt < CONFIG.MEDIA.MAX_RETRIES) {
-//           await new Promise(r => setTimeout(r, 3000));
-//         }
-//       }
-//     }
-
-//     const errorMessage = this.getUserFriendlyFetchError(lastError, domain);
-//     throw new Error(errorMessage);
-//   }
-async fetchDomainInfoUsingAssistantAPI(
-  domain: string,
-  language: string = 'English',
-  userId: string
-): Promise<DomainInfo> {
-  let lastError: any = null;
-
-  for (let attempt = 1; attempt <= CONFIG.MEDIA.MAX_RETRIES; attempt++) {
-    try {
-      const normalizedDomain = this.normalizeUrl(domain);
-
-      const structuredData = await this.scrapeWebsiteMedia(normalizedDomain);
-      const parsedData = JSON.parse(structuredData.data);
-
-      // ✅ REMOVED: file upload, fileStream, dirPath, filePath, fs.writeFileSync
-      // ✅ REMOVED: thread creation, run polling, Assistant API entirely
-
-      const prompt = `Return ONLY valid JSON in the schema below.
+const prompt = `Return ONLY valid JSON in the schema below.
 Use ONLY the provided HTML.
 Do NOT guess or add external information.
 
@@ -3514,128 +2520,143 @@ SCHEMA
   "product_or_service": "",
   "logo_url": "",
   "image_urls": []
-}`;
+}
+`;
 
-      // ✅ Direct gpt-4o call — no polling, no file upload, instant response
-      const response = await this.client.chat.completions.create({
-        model: 'gpt-4o',
-        temperature: 0,
-        response_format: { type: 'json_object' }, // ✅ guarantees clean JSON, no markdown fences
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a data extraction assistant. Always return valid JSON only. Never include markdown or code fences.',
-          },
-          {
-            role: 'user',
-            content: `${prompt.trim()}\n\nHTML DATA:\n${JSON.stringify(parsedData)}`,
-          },
-        ],
-      });
+        const thread = await this.client.beta.threads.create({
+          messages: [{
+            role: "user",
+            attachments: [{
+              file_id: file.id,
+              tools: [
+                { type: 'file_search' },
+                { type: "code_interpreter" }
+              ]
+            }],
+            content: [{ type: "text", text: prompt.trim() }],
+          }],
+        });
 
-      // ✅ Clean parse — no markdown stripping needed due to response_format
-      const rawContent = response.choices[0].message.content || '{}';
-      let parsed: any = {};
-      try {
-        parsed = JSON.parse(rawContent);
-      } catch {
-        const match = rawContent.match(/\{[\s\S]*\}/);
-        if (match) parsed = JSON.parse(match[0]);
-        else throw new Error('Failed to parse AI response');
-      }
+        const run = await this.client.beta.threads.runs.create(thread.id, {
+          assistant_id: process.env.ASSISTANT_ID as string
+        });
 
-      // ✅ UNCHANGED — your existing helper functions kept as-is
-      const normalizeUrl = (url: string): string => {
-        if (!url || typeof url !== 'string') return '';
-        url = url.trim();
-        if (url.startsWith('http://') || url.startsWith('https://')) return url;
-        if (url.startsWith('//')) return 'https:' + url;
-        if (url.startsWith('/')) {
+        let runStatus = run;
+        let pollCount = 0;
+
+        while (runStatus.status !== "completed" && runStatus.status !== "failed" && pollCount < CONFIG.TIMEOUTS.ASSISTANT_POLL_MAX) {
+          await new Promise((r) => setTimeout(r, 2000));
+          runStatus = await this.client.beta.threads.runs.retrieve(run.id, { thread_id: thread.id });
+          pollCount++;
+        }
+
+        if (runStatus.status === 'failed') throw new Error('OpenAI Assistant run failed');
+        if (pollCount >= CONFIG.TIMEOUTS.ASSISTANT_POLL_MAX) throw new Error('OpenAI Assistant timeout');
+
+        const messages = await this.client.beta.threads.messages.list(thread.id);
+        const content = (messages.data[0].content[0] as any).text.value;
+       
+        let parsed: any = {};
+        try {
+          parsed = JSON.parse(content);
+        } catch {
+          throw new Error('Failed to parse AI response');
+        }
+
+        const normalizeUrl = (url: string): string => {
+          if (!url || typeof url !== 'string') return '';
+          url = url.trim();
+
+          if (url.startsWith('http://') || url.startsWith('https://')) return url;
+          if (url.startsWith('//')) return 'https:' + url;
+          if (url.startsWith('/')) {
+            const baseUrl = normalizedDomain.replace(/\/$/, '');
+            return baseUrl + url;
+          }
+
           const baseUrl = normalizedDomain.replace(/\/$/, '');
-          return baseUrl + url;
-        }
-        const baseUrl = normalizedDomain.replace(/\/$/, '');
-        return baseUrl + '/' + url.replace(/^\.\//, '');
-      };
+          return baseUrl + '/' + url.replace(/^\.\//, '');
+        };
 
-      const validateAndNormalize = (urls: any[]): string[] => {
-        if (!Array.isArray(urls)) return [];
-        const uniqueUrls = new Set<string>();
-        return urls
-          .map(url => normalizeUrl(url))
-          .filter(url => url && url.length > 0)
-          .filter(url => {
-            try {
-              const urlObj = new URL(url);
-              const pathname = urlObj.pathname.toLowerCase();
-              if (pathname.includes('.svg')) return false;
-              const hasAllowedExtension = CONFIG.MEDIA.VALID_IMAGE_EXTS.some(ext =>
-                pathname.includes(`.${ext}`)
-              );
-              const hasExtension = pathname.includes('.');
-              if (!hasExtension) return true;
-              return hasAllowedExtension;
-            } catch {
-              return false;
-            }
-          })
-          .filter(url => {
-            if (uniqueUrls.has(url)) return false;
-            uniqueUrls.add(url);
-            return true;
-          })
-          .slice(0, CONFIG.MEDIA.MAX_IMAGES);
-      };
+        const validateAndNormalize = (urls: any[]): string[] => {
+          if (!Array.isArray(urls)) return [];
 
-      const processProductsServices = (products: any): string => {
-        if (typeof products === 'string') return products; // ✅ FIXED: prompt returns string now
-        if (Array.isArray(products)) {
-          return products
-            .map(p => {
-              if (typeof p === 'object' && p.name && p.description) {
-                return `${p.name}: ${p.description}`;
+          const uniqueUrls = new Set<string>();
+
+          return urls
+            .map(url => normalizeUrl(url))
+            .filter(url => url && url.length > 0)
+            .filter(url => {
+              try {
+                const urlObj = new URL(url);
+                const pathname = urlObj.pathname.toLowerCase();
+
+                if (pathname.includes('.svg')) return false;
+
+                const hasAllowedExtension = CONFIG.MEDIA.VALID_IMAGE_EXTS.some(ext =>
+                  pathname.includes(`.${ext}`)
+                );
+
+                const hasExtension = pathname.includes('.');
+                if (!hasExtension) return true;
+
+                return hasAllowedExtension;
+              } catch {
+                return false;
               }
-              return typeof p === 'string' ? p : '';
             })
-            .filter(Boolean)
-            .join(' ');
+            .filter(url => {
+              if (uniqueUrls.has(url)) return false;
+              uniqueUrls.add(url);
+              return true;
+            })
+            .slice(0, CONFIG.MEDIA.MAX_IMAGES);
+        };
+
+        const processProductsServices = (products: any): string => {
+          if (Array.isArray(products)) {
+            return products.map(product => {
+              if (typeof product === 'object' && product.name && product.description) {
+                return `${product.name}: ${product.description}`;
+              }
+              return typeof product === 'string' ? product : '';
+            }).filter(p => p).join("");
+          }
+
+          return typeof products === 'string' ? products : '';
+        };
+        
+        const data: DomainInfo = {
+          brandName: parsed.brand_name || "",
+          slogan: parsed.slogan || "",
+          products: processProductsServices(parsed.product_or_service),
+          logoUrl: normalizeUrl(parsed.logo_url || ""),
+          imageUrls: validateAndNormalize(parsed.image_urls || [])
+        };
+        this.logger.log('Data',data);
+        return data;
+
+      } catch (err: any) {
+        lastError = err;
+        this.logger.error(`Attempt ${attempt}/${CONFIG.MEDIA.MAX_RETRIES} failed: ${err.message}`);
+
+        if (
+          err.message?.includes('Invalid domain') ||
+          err.message?.includes('Authentication') ||
+          err.message?.includes('ASSISTANT_ID')
+        ) {
+          break;
         }
-        return '';
-      };
 
-      const data: DomainInfo = {
-        brandName: parsed.brand_name || '',
-        slogan: parsed.slogan || '',
-        products: processProductsServices(parsed.product_or_service),
-        logoUrl: normalizeUrl(parsed.logo_url || ''),
-        imageUrls: validateAndNormalize(parsed.image_urls || []),
-      };
-
-      this.logger.log('Data', data);
-      return data;
-
-    } catch (err: any) {
-      lastError = err;
-      this.logger.error(`Attempt ${attempt}/${CONFIG.MEDIA.MAX_RETRIES} failed: ${err.message}`);
-
-      if (
-        err.message?.includes('Invalid domain') ||
-        err.message?.includes('Authentication')
-        // ✅ REMOVED: ASSISTANT_ID check — no longer needed
-      ) {
-        break;
-      }
-
-      if (attempt < CONFIG.MEDIA.MAX_RETRIES) {
-        await new Promise(r => setTimeout(r, 3000));
+        if (attempt < CONFIG.MEDIA.MAX_RETRIES) {
+          await new Promise(r => setTimeout(r, 3000));
+        }
       }
     }
+
+    const errorMessage = this.getUserFriendlyFetchError(lastError, domain);
+    throw new Error(errorMessage);
   }
-
-  const errorMessage = this.getUserFriendlyFetchError(lastError, domain);
-  throw new Error(errorMessage);
-}
-
 
   private getUserFriendlyFetchError(error: any, domain: string): string {
     const msg = error?.message?.toLowerCase() || '';
@@ -4097,6 +3118,7 @@ You are an expert commercial Prompt Engineer.
 Create a premium, high-converting cinematic video prompt for Google Veo 3.
 
 STRICT RULES:
+- 8-second commercial
 - Stunning advertising quality
 - Realistic lighting and smooth camera motion
 - Product must be the hero focal point
@@ -4160,8 +3182,4 @@ const completion = await this.client.chat.completions.create({
       };
     }
   }
-
-  getOpenAIClient() {
-  return this.client; // already exists as private readonly client = new OpenAI(...)
-}
 }

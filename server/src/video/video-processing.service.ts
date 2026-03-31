@@ -7,10 +7,11 @@
   import * as ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
   import axios from 'axios';
   import { createCanvas, registerFont } from 'canvas';
+import * as ffprobeInstaller from '@ffprobe-installer/ffprobe';
 
   // Set FFmpeg path
   ffmpeg.setFfmpegPath(ffmpegInstaller.path);
-
+ffmpeg.setFfprobePath(ffprobeInstaller.path);
   const unlinkAsync = promisify(fs.unlink);
   const mkdirAsync = promisify(fs.mkdir);
 
@@ -263,6 +264,61 @@ private formatSrtTime(seconds: number): string {
 
 
 
+// private async burnSrtSubtitles(
+//   inputPath: string,
+//   srtPath: string,
+//   videoRatio: string
+// ): Promise<string> {
+//   return new Promise((resolve, reject) => {
+//     const outputPath = path.join(this.tempDir, `subtitled-${Date.now()}.mp4`);
+
+//     const escapedSrt = srtPath
+//       .replace(/\\/g, '/')
+//       .replace(/:/g, '\\:');
+
+//     // ✅ subtitle style string
+//     const subtitleFilter =
+//       `subtitles='${escapedSrt}':force_style='` +
+//       `Fontsize=16,` +
+//       `Alignment=2,` +
+//       `MarginV=35,` +
+//       `Bold=0,` +
+//       `PrimaryColour=&H00FFFFFF,` +
+//       `OutlineColour=&H00000000,` +
+//       `Outline=1,` +
+//       `Shadow=1,` +
+//       `BackColour=&H60000000,` +
+//       `BorderStyle=3'`;
+
+//     ffmpeg(inputPath)
+//       .outputOptions([
+//         `-vf ${subtitleFilter}`,  // ✅ use -vf instead of .videoFilters()
+//         '-codec:v libx264',
+//         '-preset medium',
+//         '-crf 23',
+//         '-map 0:v:0',             // ✅ video
+//         '-map 0:a?',              // ✅ audio passthrough
+//         '-c:a copy',              // ✅ copy audio unchanged
+//         '-movflags +faststart',
+//         '-pix_fmt yuv420p',
+//       ])
+//       .output(outputPath)
+//       .on('start', (cmd) => {
+//         this.logger.debug(`▶️ SRT burn command: ${cmd.substring(0, 200)}...`);
+//       })
+//       .on('end', () => {
+//         this.logger.log(`✅ Subtitles burned successfully`);
+//         this.cleanupFiles(inputPath);
+//         resolve(outputPath);
+//       })
+//       .on('error', (err, stdout, stderr) => {
+//         this.logger.error(`❌ SRT burn error: ${err.message}`);
+//         this.logger.error(`FFmpeg stderr: ${stderr?.substring(0, 500)}`);
+//         reject(err);
+//       })
+//       .run();
+//   });
+// }
 private async burnSrtSubtitles(
   inputPath: string,
   srtPath: string,
@@ -271,29 +327,49 @@ private async burnSrtSubtitles(
   return new Promise((resolve, reject) => {
     const outputPath = path.join(this.tempDir, `subtitled-${Date.now()}.mp4`);
 
-    // Escape path for FFmpeg subtitles filter (handles Windows backslashes + colons)
     const escapedSrt = srtPath
       .replace(/\\/g, '/')
       .replace(/:/g, '\\:');
 
+   const isVertical = videoRatio === '9:16';
+
+const fontSize = isVertical ? 52 : 52;
+const marginV  = isVertical ? 110 : 50;
+const marginL  = isVertical ? 15 : 0;
+const marginR  = isVertical ? 15 : 0;
+
+// ✅ Critical — tell renderer actual canvas size
+const playResX = isVertical ? 1080 : 1920;
+const playResY = isVertical ? 1920 : 1080;
+
+const subtitleFilter =
+  `subtitles='${escapedSrt}':force_style='` +
+  `Fontsize=${fontSize},` +
+  `Alignment=2,` +
+  `MarginV=${marginV},` +
+  `MarginL=${marginL},` +
+  `MarginR=${marginR},` +
+  `Bold=1,` +                          // ✅ bold makes it more readable
+  `WrapStyle=0,` +
+  `PlayResX=${playResX},` +            
+  `PlayResY=${playResY},` +            
+  `PrimaryColour=&H00FFFFFF,` +
+  `OutlineColour=&H00000000,` +
+  `Outline=1,` +                       
+  `Shadow=0,` +
+  `BackColour=&H60000000,` +
+  `BorderStyle=3'`;
+
+
     ffmpeg(inputPath)
-      .videoFilters(
-        `subtitles='${escapedSrt}':force_style='` +
-        `Fontsize=22,` +
-        `Alignment=2,` +       // bottom-center
-        `MarginV=40,` +        // margin from bottom
-        `Bold=1,` +
-        `PrimaryColour=&H00FFFFFF,` +   // white text
-        `OutlineColour=&H00000000,` +   // black outline
-        `Outline=2,` +
-        `BackColour=&H80000000,` +      // semi-transparent background
-        `BorderStyle=4'`                // box background style
-      )
       .outputOptions([
+        `-vf ${subtitleFilter}`,
         '-codec:v libx264',
         '-preset medium',
         '-crf 23',
-        '-codec:a copy',
+        '-map 0:v:0',
+        '-map 0:a?',
+        '-c:a copy',
         '-movflags +faststart',
         '-pix_fmt yuv420p',
       ])
@@ -314,6 +390,7 @@ private async burnSrtSubtitles(
       .run();
   });
 }
+
 
     /**
      * Add text and logo overlays to video
@@ -411,13 +488,15 @@ private async burnSrtSubtitles(
               '[0:v][text]overlay=(W-w)/2:H-h-80:format=auto'
             ])
             .outputOptions([
-              '-codec:v libx264',
-              '-preset medium',
-              '-crf 23',
-              '-codec:a copy',
-              '-movflags +faststart',
-              '-pix_fmt yuv420p'
-            ])
+  '-codec:v libx264',
+  '-preset medium',
+  '-crf 23',
+  '-map 0:v:0',
+  '-map 0:a?',        // ✅ passthrough
+  '-c:a copy',
+  '-movflags +faststart',
+  '-pix_fmt yuv420p'
+])
             .output(outputPath)
             .on('start', (cmd) => {
               this.logger.debug(`▶️ FFmpeg command: ${cmd.substring(0, 200)}...`);
@@ -471,13 +550,15 @@ private async burnSrtSubtitles(
               '[0:v][logo]overlay=40:40:format=auto'
             ])
             .outputOptions([
-              '-codec:v libx264',
-              '-preset medium',
-              '-crf 23',
-              '-codec:a copy',
-              '-movflags +faststart',
-              '-pix_fmt yuv420p'
-            ])
+  '-codec:v libx264',
+  '-preset medium',
+  '-crf 23',
+  '-map 0:v:0',
+  '-map 0:a?',        // ✅ passthrough
+  '-c:a copy',
+  '-movflags +faststart',
+  '-pix_fmt yuv420p'
+])
             .output(outputPath)
             .on('start', (cmd) => {
               this.logger.debug(`▶️ FFmpeg logo command: ${cmd.substring(0, 200)}...`);
@@ -671,17 +752,21 @@ private async burnSrtSubtitles(
     }
 
     async cleanupFiles(...filePaths: string[]): Promise<void> {
-      for (const filePath of filePaths) {
-        try {
-          if (filePath && fs.existsSync(filePath) && filePath.includes(this.tempDir)) {
-            await unlinkAsync(filePath);
-            this.logger.debug(`🗑️ Cleaned up: ${path.basename(filePath)}`);
-          }
-        } catch (error) {
-          this.logger.warn(`⚠️ Could not delete ${path.basename(filePath)}: ${error.message}`);
-        }
+  for (const filePath of filePaths) {
+    try {
+      // ✅ normalize both paths before comparing
+      const normalizedFile = path.normalize(filePath);
+      const normalizedTemp = path.normalize(this.tempDir);
+      if (normalizedFile && fs.existsSync(normalizedFile) && normalizedFile.includes(normalizedTemp)) {
+        await unlinkAsync(normalizedFile);
+        this.logger.debug(`🗑️ Cleaned up: ${path.basename(normalizedFile)}`);
       }
+    } catch (error) {
+      this.logger.warn(`⚠️ Could not delete ${path.basename(filePath)}: ${error.message}`);
     }
+  }
+}
+
 
     async cleanupOldTempFiles(hoursOld: number = 24): Promise<void> {
       try {
@@ -707,4 +792,197 @@ private async burnSrtSubtitles(
         this.logger.error(`❌ Error cleaning temp files: ${error.message}`);
       }
     }
+
+    // ─── OpenAI TTS — Generate voiceover MP3 ─────────────────────────────────
+async generateTTSAudio(
+  text: string,
+  narratorGender: string,
+  jobId: string | number,
+  openAIClient: any,
+): Promise<string | null> {
+  try {
+    if (!text?.trim()) {
+      this.logger.warn(`[${jobId}] ⚠️ TTS skipped — no text provided`);
+      return null;
+    }
+
+    const voice = this.resolveOpenAIVoice(narratorGender);
+    this.logger.log(`[${jobId}] 🎙️ TTS generating | voice: ${voice} | chars: ${text.length}`);
+
+    const mp3 = await openAIClient.audio.speech.create({
+      model: 'tts-1-hd',
+      voice,
+      input: text.trim(),
+      speed: 0.95,
+    });
+
+    const buffer = Buffer.from(await mp3.arrayBuffer());
+    const audioPath = path.join(this.tempDir, `tts-${jobId}-${Date.now()}.mp3`);
+    fs.writeFileSync(audioPath, buffer);
+
+    this.logger.log(`[${jobId}] ✅ TTS audio saved: ${path.basename(audioPath)}`);
+    return audioPath;
+
+  } catch (error: any) {
+    this.logger.error(`[${jobId}] ❌ TTS failed: ${error.message}`);
+    return null;
+  }
+}
+
+// ─── Map narratorGender string → OpenAI voice ────────────────────────────
+private resolveOpenAIVoice(
+  narratorGender: string,
+): 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer' {
+  const g = narratorGender.toLowerCase();
+  if (g.includes('james') || g.includes('george') || g.includes('jake')) return 'onyx';
+  if (g.includes('alex'))                                                  return 'echo';
+  if (g.includes('sarah') || g.includes('mia'))                           return 'nova';
+  if (g.includes('eleanor'))                                               return 'shimmer';
+  if (g.includes('whisper') || g.includes('asmr'))                        return 'fable';
+  if (g.includes('male') && !g.includes('female'))                        return 'onyx';
+  return 'nova';
+}
+
+// ─── Merge TTS audio onto video via FFmpeg ────────────────────────────────
+async mergeAudioOntoVideo(
+  videoLocalPath: string,
+  audioLocalPath: string,
+  jobId: string | number,
+  audioStartOffset: number = 0,
+): Promise<string | null> {
+  return new Promise((resolve) => {
+    const outputPath = path.join(this.tempDir, `final-${jobId}-${Date.now()}.mp4`);
+
+    this.logger.log(`[${jobId}] 🎬 Merging TTS voice over Veo background music`);
+
+    ffmpeg.ffprobe(videoLocalPath, (err, metadata) => {
+      const hasAudio = !err && metadata.streams.some(s => s.codec_type === 'audio');
+      this.logger.log(`[${jobId}] 🎵 Video has audio: ${hasAudio}`);
+
+      const command = ffmpeg()
+        .input(videoLocalPath)
+        .input(audioLocalPath);
+
+      if (hasAudio) {
+        command
+          .complexFilter([
+            `[0:a]volume=0.30[bgmusic]`,
+            `[1:a]volume=3.0[voice]`,
+            `[bgmusic][voice]amix=inputs=2:duration=first:dropout_transition=2[aout]`,
+          ])
+          .outputOptions([
+            '-map 0:v:0',      // ✅ video from Veo
+            '-map [aout]',     // ✅ mixed audio
+            '-c:v copy',
+            '-c:a aac',
+            '-b:a 192k',
+            '-movflags +faststart',
+          ]);
+      } else {
+        // ✅ No Veo audio — use TTS only with delay
+        command
+          .complexFilter([
+            `[1:a]volume=2.0[voice]`,
+          ])
+          .outputOptions([
+            '-map 0:v:0',      // ✅ video
+            '-map [voice]',    // ✅ TTS audio only
+            '-c:v copy',
+            '-c:a aac',
+            '-b:a 192k',
+            '-movflags +faststart',
+          ]);
+      }
+
+      command
+        .output(outputPath)
+        .on('start', cmd => {
+          this.logger.debug(`[${jobId}] ▶️ FFmpeg: ${cmd.substring(0, 150)}`);
+        })
+        .on('end', () => {
+          this.logger.log(`[${jobId}] ✅ Audio merge complete`);
+          this.cleanupFiles(videoLocalPath, audioLocalPath);
+          resolve(outputPath);
+        })
+        .on('error', (err, _stdout, stderr) => {
+          this.logger.error(`[${jobId}] ❌ Merge error: ${err.message}`);
+          this.logger.error(`FFmpeg stderr: ${stderr?.substring(0, 300)}`);
+          resolve(null);
+        })
+        .run();
+    });
+  });
+}
+
+
+
+// ─── Get actual audio duration via ffprobe ────────────────────────────
+async getAudioDuration(audioPath: string): Promise<number> {
+  return new Promise((resolve) => {
+    ffmpeg.ffprobe(audioPath, (err, metadata) => {
+      if (err) {
+        this.logger.warn(`⚠️ Could not probe audio: ${err.message} — defaulting 3s`);
+        return resolve(3);
+      }
+      resolve(metadata.format?.duration || 3);
+    });
+  });
+}
+
+
+
+async buildVoiceTrack(
+  segmentPaths: string[],
+  segmentStartTimes: number[],  // real cursor times per segment
+  totalDuration: number,
+  jobId: string | number,
+): Promise<string | null> {
+  return new Promise((resolve) => {
+    const outputPath = path.join(this.tempDir, `voice-track-${jobId}-${Date.now()}.mp3`);
+
+    this.logger.log(`[${jobId}] 🎙️ Building voice track | segments=${segmentPaths.length}`);
+
+    const cmd = ffmpeg();
+    segmentPaths.forEach(p => cmd.input(p));
+
+    const filters: string[] = [];
+
+    // Position each TTS segment at its real measured start time
+    segmentPaths.forEach((_, i) => {
+      const delayMs = Math.round(segmentStartTimes[i] * 1000);
+      filters.push(`[${i}:a]adelay=${delayMs}|${delayMs},volume=3.0[seg${i}]`);
+    });
+
+    // Mix all positioned segments into one track
+    const allInputs = segmentPaths.map((_, i) => `[seg${i}]`).join('');
+    filters.push(
+      `${allInputs}amix=inputs=${segmentPaths.length}:duration=longest:dropout_transition=1[out]`
+    );
+
+    cmd
+      .complexFilter(filters)
+      .outputOptions([
+        '-map [out]',
+        '-c:a libmp3lame',
+        '-b:a 192k',
+        `-t ${totalDuration}`,
+      ])
+      .output(outputPath)
+      .on('start', c => this.logger.debug(`[${jobId}] ▶️ Voice track: ${c.substring(0, 150)}`))
+      .on('end', () => {
+        this.logger.log(`[${jobId}] ✅ Voice track built: ${path.basename(outputPath)}`);
+        this.cleanupFiles(...segmentPaths);
+        resolve(outputPath);
+      })
+      .on('error', (err, _, stderr) => {
+        this.logger.error(`[${jobId}] ❌ Voice track error: ${err.message}`);
+        this.logger.error(`stderr: ${stderr?.substring(0, 300)}`);
+        resolve(null);
+      })
+      .run();
+  });
+}
+
+
+
   }
