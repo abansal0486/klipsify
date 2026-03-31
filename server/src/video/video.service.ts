@@ -1812,7 +1812,7 @@ private normalizeAspectRatio(input: string): string {
   ): Promise<any> {
 
     const BASE_DURATION = 8;
-    const EXTENSION_DURATION = 8;
+    const EXTENSION_DURATION = 7;
     const MAX_RETRIES = 2;
     const RETRY_WAIT_MS = 20000;
 
