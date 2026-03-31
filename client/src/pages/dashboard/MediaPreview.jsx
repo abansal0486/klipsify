@@ -3,14 +3,21 @@ import { createPortal } from "react-dom";
 import {
   ArrowLeft, Download, Share2, Trash2, ChevronLeft, ChevronRight,
   Sparkles, Calendar, FileText, Wand2, ImageIcon, Video, Check,
-  Mic, Captions,
+  Mic, Captions, Play, Timer,
 } from "lucide-react";
 import { deleteMedia } from "../../redux/actions/imageVideoAction";
 
+const STRIP_SIZE = 5;
+
 export default function MediaPreview({ item, items = [], onClose, dispatch, handleDownload }) {
   const [currentIndex, setCurrentIndex] = useState(() => items.findIndex((i) => i.id === item?.id));
-  const [copied, setCopied]   = useState(false);
-  const [imgLoaded, setImgLoaded] = useState(false);
+  const [stripOffset, setStripOffset]   = useState(() => {
+    const idx = items.findIndex((i) => i.id === item?.id);
+    return Math.max(0, Math.min(idx - Math.floor(STRIP_SIZE / 2), items.length - STRIP_SIZE));
+  });
+  const [copied, setCopied]         = useState(false);
+  const [imgLoaded, setImgLoaded]   = useState(false);
+  const [videoLoading, setVideoLoading] = useState(true);
 
   const current  = items[currentIndex] ?? item;
   const mediaUrl = current?.url || current?.imageUrl;
@@ -18,7 +25,16 @@ export default function MediaPreview({ item, items = [], onClose, dispatch, hand
   const hasPrev  = currentIndex > 0;
   const hasNext  = currentIndex < items.length - 1;
 
-  useEffect(() => { setImgLoaded(false); }, [currentIndex]);
+  useEffect(() => { setImgLoaded(false); setVideoLoading(true); }, [currentIndex]);
+
+  // Keep strip window centered on the active item
+  useEffect(() => {
+    setStripOffset((prev) => {
+      if (currentIndex < prev) return currentIndex;
+      if (currentIndex >= prev + STRIP_SIZE) return currentIndex - STRIP_SIZE + 1;
+      return prev;
+    });
+  }, [currentIndex]);
 
   useEffect(() => {
     const onKey = (e) => {
@@ -70,7 +86,7 @@ export default function MediaPreview({ item, items = [], onClose, dispatch, hand
           Back to Gallery
         </button>
 
-        {/* Type badge + counter */}
+        {/* Type badge + duration */}
         <div className="flex items-center gap-2">
           <span className={`inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full border
             ${isVideo
@@ -80,8 +96,11 @@ export default function MediaPreview({ item, items = [], onClose, dispatch, hand
             {isVideo ? <Video size={10} /> : <ImageIcon size={10} />}
             {isVideo ? "Video" : "Image"}
           </span>
-          {items.length > 1 && (
-            <span className="text-xs text-gray-400 font-medium">{currentIndex + 1} / {items.length}</span>
+          {isVideo && current?.videoDuration && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full border bg-gray-50 text-gray-600 border-gray-200">
+              <Timer size={10} />
+              {current.videoDuration}
+            </span>
           )}
         </div>
 
@@ -122,13 +141,25 @@ export default function MediaPreview({ item, items = [], onClose, dispatch, hand
                 <div className="w-80 h-80 rounded-2xl bg-gray-200 animate-pulse" />
               )}
               {isVideo ? (
-                <video
-                  key={mediaUrl}
-                  src={mediaUrl}
-                  controls
-                  autoPlay
-                  className="max-h-[calc(100vh-200px)] max-w-full rounded-2xl shadow-xl shadow-gray-300/60 object-contain"
-                />
+                <div className="relative">
+                  {videoLoading && (
+                    <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-gray-200 z-10"
+                      style={{ minWidth: 320, minHeight: 180 }}>
+                      {current?.thumbnail
+                        ? <img src={current.thumbnail} alt="" className="absolute inset-0 w-full h-full object-cover rounded-2xl opacity-60" />
+                        : null}
+                      <div className="relative z-10 w-12 h-12 rounded-full border-4 border-purple-300 border-t-purple-600 animate-spin" />
+                    </div>
+                  )}
+                  <video
+                    key={mediaUrl}
+                    src={mediaUrl}
+                    controls
+                    preload="metadata"
+                    poster={current?.thumbnail || undefined}
+                    onCanPlay={() => setVideoLoading(false)}
+                    className={`max-h-[calc(100vh-200px)] max-w-full rounded-2xl shadow-xl shadow-gray-300/60 object-contain transition-opacity duration-300 ${videoLoading ? "opacity-0" : "opacity-100"}`}
+                  /></div>
               ) : (
                 <img
                   key={mediaUrl}
@@ -153,28 +184,91 @@ export default function MediaPreview({ item, items = [], onClose, dispatch, hand
             )}
           </div>
 
-          {/* Thumbnail strip */}
+          {/* Thumbnail strip — 5 at a time */}
           {items.length > 1 && (
-            <div className="flex items-center justify-center gap-2 px-5 py-3 bg-white border-t border-gray-200 overflow-x-auto">
-              {items.map((it, idx) => {
-                const url = it.url || it.imageUrl;
-                return (
-                  <button
-                    key={it.id}
-                    onClick={() => setCurrentIndex(idx)}
-                    className={`w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 border-2 transition-all duration-150
-                      ${idx === currentIndex
-                        ? "border-purple-500 scale-110 shadow-md shadow-purple-200"
-                        : "border-gray-200 opacity-50 hover:opacity-80"
-                      }`}
-                  >
-                    {it.type === "video"
-                      ? <video src={url} className="w-full h-full object-cover" muted preload="metadata" />
-                      : <img src={url} alt="" className="w-full h-full object-cover" loading="lazy" />
-                    }
-                  </button>
-                );
-              })}
+            <div className="flex items-center justify-center gap-2 px-4 py-3 bg-white border-t border-gray-200">
+              {/* Strip prev arrow */}
+              <button
+                onClick={() => setStripOffset((o) => Math.max(0, o - 1))}
+                disabled={stripOffset === 0}
+                className="w-7 h-7 rounded-lg flex items-center justify-center border border-gray-200 text-gray-400
+                  hover:border-purple-300 hover:text-purple-600 transition disabled:opacity-20 disabled:pointer-events-none flex-shrink-0"
+              >
+                <ChevronLeft size={14} />
+              </button>
+
+              {/* 5 visible thumbnails */}
+              <div className="flex items-center gap-2">
+                {items.slice(stripOffset, stripOffset + STRIP_SIZE).map((it, i) => {
+                  const idx     = stripOffset + i;
+                  const url     = it.url || it.imageUrl;
+                  const isVid   = it.type === "video";
+                  const active  = idx === currentIndex;
+                  return (
+                    <button
+                      key={it.id}
+                      onClick={() => setCurrentIndex(idx)}
+                      className={`relative w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 border-2 transition-all duration-150 bg-gray-900
+                        ${active
+                          ? "border-purple-500 scale-110 shadow-md shadow-purple-200"
+                          : "border-gray-200 opacity-50 hover:opacity-80"
+                        }`}
+                    >
+                      {isVid ? (
+                        it.thumbnail ? (
+                          <img
+                            src={it.thumbnail}
+                            alt=""
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                            decoding="async"
+                          />
+                        ) : (
+                          /* No thumbnail — show first frame via metadata-only video */
+                          <video
+                            src={url}
+                            className="w-full h-full object-cover"
+                            muted
+                            preload="metadata"
+                            playsInline
+                          />
+                        )
+                      ) : (
+                        <img
+                          src={url}
+                          alt=""
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      )}
+                      {/* Play badge on videos */}
+                      {isVid && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                          <div className="w-5 h-5 rounded-full bg-white/90 flex items-center justify-center">
+                            <Play size={8} className="text-gray-800 fill-gray-800 ml-0.5" />
+                          </div>
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Strip next arrow */}
+              <button
+                onClick={() => setStripOffset((o) => Math.min(items.length - STRIP_SIZE, o + 1))}
+                disabled={stripOffset + STRIP_SIZE >= items.length}
+                className="w-7 h-7 rounded-lg flex items-center justify-center border border-gray-200 text-gray-400
+                  hover:border-purple-300 hover:text-purple-600 transition disabled:opacity-20 disabled:pointer-events-none flex-shrink-0"
+              >
+                <ChevronRight size={14} />
+              </button>
+
+              {/* Position indicator */}
+              <span className="text-[10px] text-gray-400 font-medium ml-1 flex-shrink-0">
+                {currentIndex + 1} / {items.length}
+              </span>
             </div>
           )}
         </div>
@@ -226,6 +320,15 @@ export default function MediaPreview({ item, items = [], onClose, dispatch, hand
                 {isVideo ? "Video" : "Image"}
               </span>
             </InfoCard>
+
+            {/* Duration */}
+            {isVideo && current?.videoDuration && (
+              <InfoCard icon={<Timer size={13} />} label="Duration">
+                <span className="inline-block text-xs font-bold text-gray-700 bg-gray-100 border border-gray-200 px-2 py-0.5 rounded-full">
+                  {current.videoDuration}
+                </span>
+              </InfoCard>
+            )}
 
             {/* Voice Script */}
             {isVideo && (

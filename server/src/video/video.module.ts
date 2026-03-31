@@ -12,6 +12,7 @@ import { VideoPrompt, VideoPromptSchema } from './schema/video-prompt.schema';
 import { User, UserSchema } from "src/users/schemas/user.schema";
 import { VideoProcessingService } from './video-processing.service';
 import { Subscription, SubscriptionSchema,  } from "src/subscriptions/schemas/subscription.schema";
+import { SubscriptionsModule } from "src/subscriptions/subscriptions.module";
 @Module({
   imports: [
     MongooseModule.forFeature([
@@ -53,6 +54,7 @@ import { Subscription, SubscriptionSchema,  } from "src/subscriptions/schemas/su
 
     // 🔥 ADD THIS: Import CacheModule (it's already global but needs explicit import)
     CacheModule.register(),
+    SubscriptionsModule,
   ],
   controllers: [VideoController, FilesController],
   providers: [

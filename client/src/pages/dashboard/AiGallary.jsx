@@ -1,9 +1,11 @@
-import React, { useEffect, useState, useMemo, useCallback } from "react";
+import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { fetchGallery, deleteMedia, pullJobs } from "../../redux/actions/imageVideoAction";
 import MediaCard from "../../components/MediaCard";
 import MediaPreview from "./MediaPreview";
-import { Images, Video, Sparkles, FolderOpen, LayoutGrid, List, Download, Share2, Trash2, Play, ImageIcon } from "lucide-react";
+import { Images, Video, Sparkles, FolderOpen, LayoutGrid, List, Download, Share2, Trash2, Play, ImageIcon, Loader2 } from "lucide-react";
+
+const PAGE_SIZE = 5;
 
 export default function AIGallery() {
   const dispatch = useDispatch();
@@ -15,9 +17,14 @@ export default function AIGallery() {
     () => window.localStorage.getItem("galleryViewMode") || "grid"
   );
   const [previewItem, setPreviewItem] = useState(null);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const sentinelRef = useRef(null);
 
-  useEffect(() => { window.localStorage.setItem("lastActiveTab",    activeTab); }, [activeTab]);
-  useEffect(() => { window.localStorage.setItem("galleryViewMode",  viewMode);  }, [viewMode]);
+  useEffect(() => { window.localStorage.setItem("lastActiveTab",   activeTab); }, [activeTab]);
+  useEffect(() => { window.localStorage.setItem("galleryViewMode", viewMode);  }, [viewMode]);
+
+  // Reset pagination when tab or view changes
+  useEffect(() => { setVisibleCount(PAGE_SIZE); }, [activeTab, viewMode]);
 
   const gallery     = useSelector((state) => state.generation?.gallery || []);
   const queue       = useSelector((state) => state.generation?.queue   || []);
@@ -43,12 +50,33 @@ export default function AIGallery() {
     [activeTab, allMedia]
   );
 
+  const visibleItems = useMemo(
+    () => filteredGallery.slice(0, visibleCount),
+    [filteredGallery, visibleCount]
+  );
+
+  const hasMore = visibleCount < filteredGallery.length;
+
+  // Infinite scroll — load next page when sentinel enters view
+  useEffect(() => {
+    if (!sentinelRef.current || !hasMore) return;
+    const el = sentinelRef.current;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) setVisibleCount((c) => c + PAGE_SIZE);
+      },
+      { rootMargin: "300px" }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasMore, visibleCount]); // re-attach after each batch loads
+
   const imageCount = useMemo(() => allMedia.filter((i) => i.type === "image").length, [allMedia]);
   const videoCount = useMemo(() => allMedia.filter((i) => i.type === "video").length, [allMedia]);
 
   useEffect(() => {
     if (!userId) return;
-    const interval = setInterval(() => dispatch(pullJobs(userId)), 3000);
+    const interval = setInterval(() => dispatch(pullJobs(userId)), 5000);
     return () => clearInterval(interval);
   }, [userId, dispatch]);
 
@@ -166,34 +194,52 @@ export default function AIGallery() {
         ) : filteredGallery.length === 0 ? (
           <EmptyState type={activeTab} />
         ) : viewMode === "grid" ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-            {filteredGallery.map((item) => (
-              <MediaCard
-                key={item.id}
-                item={item}
-                openPreview={openPreview}
-                handleDownload={handleDownload}
-                handleShare={handleShare}
-                dispatch={dispatch}
-              />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+              {visibleItems.map((item) => (
+                <MediaCard
+                  key={item.id}
+                  item={item}
+                  openPreview={openPreview}
+                  handleDownload={handleDownload}
+                  handleShare={handleShare}
+                  dispatch={dispatch}
+                />
+              ))}
+            </div>
+            {/* Infinite scroll sentinel */}
+            {hasMore && (
+              <div ref={sentinelRef} className="flex justify-center items-center gap-2 py-8 text-gray-400 text-sm">
+                <Loader2 size={16} className="animate-spin text-purple-400" />
+                <span>Loading more…</span>
+              </div>
+            )}
+          </>
         ) : (
-          <div className="flex flex-col gap-2.5">
-            {filteredGallery.map((item, idx) => (
-              <ListRow
-                key={item.id}
-                item={item}
-                index={idx}
-                openPreview={openPreview}
-                handleDownload={handleDownload}
-                handleShare={handleShare}
-                dispatch={dispatch}
-              />
-            ))}
-          </div>
+          <>
+            <div className="flex flex-col gap-2.5">
+              {visibleItems.map((item, idx) => (
+                <ListRow
+                  key={item.id}
+                  item={item}
+                  index={idx}
+                  openPreview={openPreview}
+                  handleDownload={handleDownload}
+                  handleShare={handleShare}
+                  dispatch={dispatch}
+                />
+              ))}
+            </div>
+            {hasMore && (
+              <div ref={sentinelRef} className="flex justify-center items-center gap-2 py-8 text-gray-400 text-sm">
+                <Loader2 size={16} className="animate-spin text-purple-400" />
+                <span>Loading more…</span>
+              </div>
+            )}
+          </>
         )}
       </div>
+
       {/* ── PREVIEW MODAL ── */}
       {previewItem && (
         <MediaPreview
@@ -253,8 +299,15 @@ function ListRow({ item, index, openPreview, handleDownload, handleShare, dispat
             {!imgLoaded && <div className="absolute inset-0 bg-gray-100 animate-pulse rounded-xl" />}
             {isVideo ? (
               <>
-                <video src={mediaUrl} className={`w-full h-full object-cover transition-opacity duration-200 ${imgLoaded ? "opacity-100" : "opacity-0"}`}
-                  muted preload="metadata" onLoadedMetadata={() => setImgLoaded(true)} />
+                {item.thumbnail ? (
+                  <img src={item.thumbnail} alt="thumbnail" loading="lazy" decoding="async"
+                    onLoad={() => setImgLoaded(true)}
+                    className={`w-full h-full object-cover transition-opacity duration-200 ${imgLoaded ? "opacity-100" : "opacity-0"}`} />
+                ) : (
+                  <div className="absolute inset-0 bg-gradient-to-br from-purple-50 to-pink-50 flex items-center justify-center">
+                    <Video size={20} className="text-purple-300" />
+                  </div>
+                )}
                 <div className="absolute inset-0 flex items-center justify-center bg-black/25">
                   <div className="w-6 h-6 rounded-full bg-white/90 flex items-center justify-center shadow-sm">
                     <Play size={10} className="text-gray-800 fill-gray-800 ml-0.5" />
@@ -366,7 +419,7 @@ function EmptyState({ type }) {
 function SkeletonGrid() {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-      {Array.from({ length: 12 }).map((_, i) => (
+      {Array.from({ length: 5 }).map((_, i) => (
         <div key={i} className="aspect-square rounded-xl bg-gray-100 border border-gray-200 animate-pulse" />
       ))}
     </div>
@@ -376,7 +429,7 @@ function SkeletonGrid() {
 function SkeletonList() {
   return (
     <div className="flex flex-col gap-2">
-      {Array.from({ length: 8 }).map((_, i) => (
+      {Array.from({ length: 5 }).map((_, i) => (
         <div key={i} className="flex items-center gap-4 px-4 py-3 bg-white border border-gray-200 rounded-xl animate-pulse">
           <div className="w-14 h-14 rounded-lg bg-gray-100 flex-shrink-0" />
           <div className="flex-1 space-y-2">

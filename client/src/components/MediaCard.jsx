@@ -68,22 +68,40 @@ const MediaCard = React.memo(
           </>
 
         ) : (
-          /* ── VIDEO — src only set when card enters viewport ── */
+          /* ── VIDEO — show thumbnail image, no video element needed in grid ── */
           <div onClick={() => openPreview(item)} className="relative w-full h-full cursor-pointer">
-            {/* Placeholder until in-view */}
-            {!inView && (
-              <div className="absolute inset-0 bg-gradient-to-br from-purple-50 to-pink-50 flex items-center justify-center">
-                <Video size={24} className="text-purple-200" />
-              </div>
-            )}
-            {inView && (
-              <video
-                src={mediaUrl}
-                className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                muted
-                preload="metadata"  // loads first frame + duration only — no full video fetch
-                playsInline
-              />
+            {item.thumbnail ? (
+              <>
+                {!imgLoaded && (
+                  <div className="absolute inset-0 bg-gradient-to-br from-purple-50 to-pink-50 animate-pulse" />
+                )}
+                <img
+                  src={item.thumbnail}
+                  alt="video thumbnail"
+                  loading="lazy"
+                  decoding="async"
+                  onLoad={() => setImgLoaded(true)}
+                  className={`w-full h-full object-cover transition-all duration-300 group-hover:scale-105 ${imgLoaded ? "opacity-100" : "opacity-0"}`}
+                />
+              </>
+            ) : (
+              /* fallback: load first frame via video metadata only when in viewport */
+              <>
+                {!inView && (
+                  <div className="absolute inset-0 bg-gradient-to-br from-purple-50 to-pink-50 flex items-center justify-center">
+                    <Video size={24} className="text-purple-200" />
+                  </div>
+                )}
+                {inView && (
+                  <video
+                    src={mediaUrl}
+                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    muted
+                    preload="metadata"
+                    playsInline
+                  />
+                )}
+              </>
             )}
             <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/10 transition-colors duration-200">
               <div className="w-10 h-10 rounded-full bg-white/90 shadow-md flex items-center justify-center">
@@ -102,6 +120,13 @@ const MediaCard = React.memo(
             <span className="text-[9px] font-bold text-gray-600 uppercase tracking-wide">
               {isVideo ? "Video" : "Image"}
             </span>
+          </div>
+        )}
+
+        {/* ── DURATION BADGE (videos only, always visible) ── */}
+        {!isProcessing && isVideo && item.videoDuration && (
+          <div className="absolute bottom-2 right-2 px-1.5 py-0.5 rounded-md bg-black/70 backdrop-blur-sm">
+            <span className="text-[9px] font-bold text-white tracking-wide">{item.videoDuration}</span>
           </div>
         )}
 
