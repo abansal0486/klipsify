@@ -41,7 +41,6 @@ import {
 } from "@nestjs/swagger";
 import { Readable } from "stream";
 import { Throttle } from '@nestjs/throttler';
-
 const CONFIG = {
   FILES: {
     MAX_SIZE: 50 * 1024 * 1024,
@@ -238,8 +237,8 @@ export class VideoController {
 
   @Post("generate-image")
   @HttpCode(HttpStatus.ACCEPTED)
-  @ApiOperation({ summary: 'Unified content generation (freestyle)' })
-  @ApiResponse({ status: 202, description: 'Content queued' })
+  @ApiOperation({ summary: 'Generate AI image' })
+  @ApiResponse({ status: 202, description: 'Image queued' })
   async generateImage(@Body() body: {
     userId: string;
     storyboard: string;
@@ -300,7 +299,7 @@ export class VideoController {
     }
   }
 
-  @Post("create-from-prompt")
+ @Post("create-from-prompt")
 @HttpCode(HttpStatus.ACCEPTED)
 async createVideoFromPrompt(@Body() body: {
   userId: string;
@@ -308,10 +307,8 @@ async createVideoFromPrompt(@Body() body: {
   useLogo?: boolean;
   useSlogan?: boolean;
   videoRatio?: string;
-  videoDuration?: '8s' | '15s' | '30s';      // ← ADD
-  backgroundReference?: string;
+  videoDuration?: '8s' | '15s' | '30s';
   voiceOverText?: string;
-  cameraAngle?: string;
   style?: string;
   brandName?: string;
   slogan?: string;
@@ -319,16 +316,19 @@ async createVideoFromPrompt(@Body() body: {
   language?: string;
   referenceImage?: string[];
   source?: string;
+  voiceGender?: string;
+  burnSubtitles?: boolean;
 }) {
   const startTime = Date.now();
 
   try {
     const {
       userId, storyboard, useLogo, useSlogan, videoRatio,
-      videoDuration,                                        // ← ADD
-      backgroundReference, voiceOverText, cameraAngle,
+      videoDuration, voiceOverText,
       style, brandName, slogan, logoUrl, language,
-      referenceImage, source
+      referenceImage, source,
+      voiceGender,    // ✅ destructured
+      burnSubtitles,  // ✅ destructured
     } = body;
 
     this.validateRequiredFields({ userId, storyboard }, ['userId', 'storyboard']);
@@ -338,69 +338,123 @@ async createVideoFromPrompt(@Body() body: {
       this.validateUrl(logoUrl, 'logoUrl');
     }
 
-    // ── Step 1: Enrich storyboard with extra fields ──
+    // ── Step 1: Enrich storyboard ──────────────────────────────────────
     let enrichedStoryboard = storyboard.trim();
-
-    if (backgroundReference?.trim()) {
-      enrichedStoryboard += `\n\nBackground: ${backgroundReference.trim()}`;
-    }
-    if (cameraAngle?.trim()) {
-      enrichedStoryboard += `\n\nCamera: ${cameraAngle.trim()}`;
-    }
     if (style?.trim()) {
       enrichedStoryboard += `\n\nStyle/Mood: ${style.trim()}`;
     }
+    // ✅ REMOVED: backgroundReference, cameraAngle enrichment
 
-let scriptPairs: { script: string; voiceOver: string }[];
+    // ── Step 2: Build fallback pair ────────────────────────────────────
+    // ✅ CHANGED: narratorGender now uses voiceGender from frontend
+    const fallbackPair: ScriptVoPair = {
+      script:         enrichedStoryboard,
+      voiceOver:      voiceOverText?.trim() || '',
+      narrator:       '',
+      narratorGender: voiceGender?.trim() || 'female',  // ✅ real voice
+      subtitleStart:  1.0,
+      subtitleEnd:    7.5,
+      isExtension:    false,
+      isLast:         true,
+    };
+
+    // ── Step 3: Generate script pairs ──────────────────────────────────
+let scriptPairs: ScriptVoPair[] = [];
 const finalDuration = (videoDuration?.trim() || '8s') as '8s' | '15s' | '30s';
 
-if (finalDuration === '15s' || finalDuration === '30s') {
-  try {
-    scriptPairs = await this.videoService.generateVideoScripts(
-      enrichedStoryboard,
-      finalDuration,
-      voiceOverText?.trim() || ''         // ← pass voiceOver here too
-    );
-    this.logger.log(`✅ Scripts generated: ${scriptPairs.length} for ${finalDuration}`);
-  } catch {
-    scriptPairs = [{ script: enrichedStoryboard, voiceOver: voiceOverText?.trim() || '' }];
-    this.logger.warn(`⚠️ Script generation failed, using enriched storyboard`);
-  }
-} else {
-  // 8s — use enriched storyboard directly
-  scriptPairs = [{ script: enrichedStoryboard, voiceOver: voiceOverText?.trim() || '' }];
-  this.logger.log(`✅ 8s video — using storyboard directly`);
+// if (finalDuration === '15s' || finalDuration === '30s') {
+//   try {
+//     scriptPairs = await this.videoService.generateVideoScripts(
+//   enrichedStoryboard,
+//   finalDuration,
+//   voiceOverText?.trim() || '',
+//   voiceGender?.trim() || 'female',  // ✅ narratorOverride
+//   'voiceover',                       // ✅ audioType — tells it to fill voiceOver field
+// );
+
+//     // ✅ FIXED: Don't overwrite voiceOver — generateVideoScripts already split it correctly
+//     scriptPairs = scriptPairs.map((p) => ({
+//       ...p,
+//       narratorGender: voiceGender?.trim() || 'female',
+//     }));
+
+//     this.logger.log(`✅ Scripts generated: ${scriptPairs.length} for ${finalDuration}`);
+//     this.logger.log(`✅ Pair voiceovers: ${JSON.stringify(scriptPairs.map(p => ({ vo: p.voiceOver?.substring(0,30), nar: p.narrator?.substring(0,30) })))}`);
+
+//   } catch (err: any) {
+//   scriptPairs = [fallbackPair];
+//   this.logger.warn(`⚠️ Script generation failed: ${err.message} — using fallback`);
+// }
+// } else {
+//   scriptPairs = [fallbackPair];
+//   this.logger.log(`✅ 8s video — using storyboard directly`);
+// }
+
+
+//     this.logger.log(`🎬 VIDEO - User: ${userId}, Duration: ${finalDuration}, Scripts: ${scriptPairs.length}, Voice: ${voiceGender || 'female'}`);
+
+    // ── Step 4: Build payload ──────────────────────────────────────────
+    try {
+  // ✅ ALL durations now use generateVideoScripts — including 8s
+  scriptPairs = await this.videoService.generateVideoScripts(
+    enrichedStoryboard,
+    finalDuration,                    // '8s', '15s', '30s' all handled
+    voiceOverText?.trim() || '',
+    voiceGender?.trim() || 'female',  // narratorOverride
+    'voiceover',                      // audioType
+  );
+
+  scriptPairs = scriptPairs.map((p) => ({
+    ...p,
+    narratorGender: voiceGender?.trim() || 'female',
+  }));
+
+  this.logger.log(`✅ Scripts generated: ${scriptPairs.length} for ${finalDuration}`);
+  this.logger.log(`✅ Pair voiceovers: ${JSON.stringify(
+    scriptPairs.map(p => ({ vo: p.voiceOver?.substring(0, 30), nar: p.narrator?.substring(0, 30) }))
+  )}`);
+
+} catch (err: any) {
+  // ✅ Fallback splits correctly for each duration
+  const segCount = finalDuration === '30s' ? 4 : finalDuration === '15s' ? 2 : 1;
+  const words = (voiceOverText?.trim() || '').split(/\s+/).filter(Boolean);
+  const chunkSize = Math.ceil(words.length / segCount);
+
+  scriptPairs = Array.from({ length: segCount }, (_, i) => ({
+    ...fallbackPair,
+    voiceOver:   words.slice(i * chunkSize, (i + 1) * chunkSize).join(' ') || fallbackPair.voiceOver,
+    isExtension: i > 0,
+    isLast:      i === segCount - 1,
+  }));
+
+  this.logger.warn(`⚠️ Script generation failed: ${err.message} — using ${segCount} fallback pairs`);
 }
 
-this.logger.log(`🎬 VIDEO - User: ${userId}, Duration: ${finalDuration}, Scripts: ${scriptPairs.length}`);
+    const hasVoiceOver = Boolean(voiceOverText?.trim());
 
-// ── Step 3: Build payload ──
-const hasVoiceOver = Boolean(voiceOverText?.trim());
-
-const videoPayload = {
-  userId: userId.trim(),
-  storyboard: enrichedStoryboard,
-  scripts: scriptPairs.map(p => p.script),        // ← Veo scene scripts
-  scriptPairs,                                     // ← full pairs for SRT
-  brandName: brandName?.trim() || '',
-  slogan: hasVoiceOver
-    ? voiceOverText!.trim()                        // ← voiceOver → SRT text
-    : (useSlogan && slogan ? slogan.trim() : ''),
-  logoUrl: useLogo && logoUrl ? logoUrl.trim() : '',
-  language: language?.trim() || 'English',
-  videoRatio: videoRatio?.trim() || '16:9',
-  videoDuration: finalDuration,
-  backgroundReference: backgroundReference?.trim() || '',
-  voiceOverText: voiceOverText?.trim() || '',
-  cameraAngle: cameraAngle?.trim() || '',
-  style: style?.trim() || '',
-  useLogo: Boolean(useLogo),
-  useSlogan: hasVoiceOver ? true : Boolean(useSlogan),  // ← force true if voiceOver
-  burnSubtitles: hasVoiceOver,                          // ← triggers SRT
-  referenceImage: referenceImage || [],
-  source: source?.trim() || 'Product',
-};
-
+    const videoPayload = {
+      userId:        userId.trim(),
+      storyboard:    enrichedStoryboard,
+      scripts:       scriptPairs.map(p => p.script),
+      scriptPairs,
+      brandName:     brandName?.trim() || '',
+      slogan:        hasVoiceOver
+                       ? voiceOverText!.trim()
+                       : (useSlogan && slogan ? slogan.trim() : ''),
+      logoUrl:       useLogo && logoUrl ? logoUrl.trim() : '',
+      language:      language?.trim() || 'English',
+      videoRatio:    videoRatio?.trim() || '16:9',
+      videoDuration: finalDuration,
+      voiceOverText: voiceOverText?.trim() || '',
+      voiceGender:   voiceGender?.trim() || 'female',    // ✅ ADDED
+      style:         style?.trim() || '',
+      useLogo:       Boolean(useLogo),
+      useSlogan:     hasVoiceOver ? true : Boolean(useSlogan),
+      burnSubtitles: Boolean(burnSubtitles),              // ✅ CHANGED: from frontend toggle
+      referenceImage: referenceImage || [],
+      source:        source?.trim() || 'Product',
+      // ✅ REMOVED: backgroundReference, cameraAngle
+    };
 
     const result = await this.videoService.queueVideoGeneration(userId, videoPayload);
 
@@ -412,21 +466,21 @@ const videoPayload = {
       jobId: result.jobId,
       message: 'Video generation started',
       statusCheckUrl: `/video/job-status/${result.jobId}`,
-      estimatedTime: finalDuration === '30s'
-        ? '8-10 minutes'
-        : finalDuration === '15s'
-        ? '4-5 minutes'
-        : '2-3 minutes',
-      remaining: result.remaining,
-      source: videoPayload.source,
+      estimatedTime: finalDuration === '30s' ? '8-10 minutes'
+                   : finalDuration === '15s' ? '4-5 minutes'
+                   : '2-3 minutes',
+      remaining:  result.remaining,
+      source:     videoPayload.source,
       details: {
-        scriptsGenerated: scriptPairs.length,
-        videoDuration: finalDuration,
-        hasVoiceOver: Boolean(voiceOverText),
-        hasLogo: Boolean(useLogo && logoUrl),
+        scriptsGenerated:    scriptPairs.length,
+        videoDuration:       finalDuration,
+        hasVoiceOver:        hasVoiceOver,
+        voiceGender:         voiceGender || 'female',   // ✅ ADDED for debugging
+        burnSubtitles:       Boolean(burnSubtitles),    // ✅ ADDED for debugging
+        hasLogo:             Boolean(useLogo && logoUrl),
         referenceImageCount: referenceImage?.length || 0,
       },
-      processingTime: `${duration}ms`
+      processingTime: `${duration}ms`,
     });
 
   } catch (error) {
@@ -434,6 +488,250 @@ const videoPayload = {
   }
 }
 
+
+
+// @Post('generate')
+// @HttpCode(HttpStatus.ACCEPTED)
+// @ApiOperation({ summary: 'Unified content generation (freestyle)' })
+// @ApiResponse({ status: 202, description: 'Content queued' })
+// async generateContent(@Body() body: {
+//   userId: string;
+//   contentName?: string;
+//   prompt: string;
+//   aspectRatio: string;
+//   contentType: 'image' | 'video';
+//   audioType?: 'none' | 'voiceover' | 'narrator';
+//   voiceOver?: string;
+//   narrator?: string;
+//   voiceGender?: string; // 'female' | 'male' | 'oldlady' | 'oldman'
+//   hasSubtitle?: boolean;
+//   videoDuration?: '8s' | '15s' | '30s';
+//   referenceImage?: string[];
+//   logo?: string;
+//   source?: string;
+// }) {
+//   const startTime = Date.now();
+
+//   try {
+//     const {
+//       userId, contentName, prompt, aspectRatio,
+//       contentType, audioType, voiceOver, narrator,
+//       voiceGender, hasSubtitle,
+//       videoDuration, referenceImage, logo, source,
+//     } = body;
+
+//     // ✅ Unified voice text — voiceover or narrator, whichever is provided
+//     const voiceText = voiceOver?.trim() || narrator?.trim() || '';
+//     const hasVoiceText = Boolean(voiceText) && audioType !== 'none';
+
+//     this.validateRequiredFields(
+//       { userId, prompt, contentType },
+//       ['userId', 'prompt', 'contentType'],
+//     );
+
+//     if (!['image', 'video'].includes(contentType)) {
+//       throw new BadRequestException({
+//         message: 'Invalid content type',
+//         acceptedValues: ['image', 'video'],
+//         receivedValue: contentType,
+//       });
+//     }
+
+//     this.validateUrlArray(referenceImage, CONFIG.FILES.MAX_REF_IMAGES_FREESTYLE, 'reference images');
+
+//     if (logo) {
+//       this.validateUrl(logo, 'logo');
+//     }
+
+//     const useLogo = Boolean(logo);
+
+//     this.logger.log(`🎨 ${contentType.toUpperCase()} freestyle - User: ${userId}`);
+    
+//     if (contentType === 'image') {
+//       const payload = {
+//         userId: userId.trim(),
+//         storyboard: prompt.trim(),
+//         brandName: contentName?.trim()
+//           ? `${contentName.trim()}-freestyle`
+//           : 'image-generated',
+//         useLogo,
+//         logoUrl: logo?.trim() || '',
+//         useSlogan: false,
+//         deviceType: aspectRatio?.trim() || '16:9',
+//         language: 'English',
+//         imageUrls: referenceImage || [],
+//         source: source?.trim() || 'freestyle',
+//         slogan: '',
+//       };
+
+//       const result = await this.videoService.queueImageGeneration(userId, payload);
+//       const duration = Date.now() - startTime;
+
+//       this.logger.log(`✅ IMAGE freestyle queued - ${duration}ms - Job: ${result.jobId}`);
+
+//       return this.buildSuccess({
+//         isPending: true,
+//         jobId: result.jobId,
+//         contentType: 'image',
+//         message: 'Image generation started',
+//         statusCheckUrl: `/video/job-status/${result.jobId}`,
+//         estimatedTime: '30-60 seconds',
+//         remaining: result.remaining,
+//         details: {
+//           prompt: prompt.substring(0, 100),
+//           aspectRatio,
+//           referenceImageCount: referenceImage?.length || 0,
+//           hasLogo: useLogo,
+//           source: payload.source,
+//         },
+//         processingTime: `${duration}ms`,
+//       });
+//     }
+
+//     // ─── VIDEO ───────────────────────────────────────────────────────────────
+
+//     // ✅ Map frontend voiceGender to full narrator character description
+//     const narratorVoiceMap: Record<string, string> = {
+
+//   female:
+//     'Sarah, young adult female narrator, warm friendly tone, clear American accent, medium-high consistent pitch, smooth pacing, close-mic studio recording, professional advertisement voice',
+
+//   male:
+//     'James, adult male narrator, deep warm confident tone, natural American accent, low consistent pitch, steady pacing, close-mic studio recording, professional commercial voice',
+
+//   old_lady:
+//     'Eleanor, elderly female storyteller narrator, warm wise tone, gentle American accent, slightly higher pitch with soft tremble, slow thoughtful pacing, close-mic storytelling style',
+
+//   old_man:
+//     'George, elderly male narrator, rich gravelly authoritative tone, classic American accent, low pitch, slow deliberate pacing, close-mic documentary narration style',
+
+//   teen_girl:
+//     'Mia, teenage girl narrator, energetic playful tone, bright American accent, higher pitch, fast lively pacing, close-mic casual social media style voice',
+
+//   teen_boy:
+//     'Jake, teenage boy narrator, relaxed playful tone, youthful American accent, medium pitch, casual conversational pacing, close-mic vlog style voice',
+
+//   professional:
+//     'Alex, professional news anchor narrator, neutral polished tone, standard American broadcast accent, medium consistent pitch, precise pacing, studio broadcast recording style',
+
+//   whispering:
+//     'soft whisper narrator voice, intimate ASMR tone, neutral American accent, very low volume, slow gentle pacing with breath detail, ultra close-mic recording style'
+// };
+//     const resolvedNarrator = narratorVoiceMap[voiceGender ?? 'female'] ?? narratorVoiceMap['female'];
+
+//     // ✅ subtitle only burns when voiceText exists + user toggled hasSubtitle
+//     const burnSubtitles = hasVoiceText && Boolean(hasSubtitle);
+
+//     let scriptPairs: ScriptVoPair[];
+
+//     try {
+//       // ✅ Always use manual flow — user prompt + split voiceover, no GPT script generation
+//       // scriptPairs = this.videoService.buildManualScriptPairs(
+//       //   prompt.trim(),
+//       //   voiceText,
+//       //   resolvedNarrator,
+//       //   videoDuration ?? '8s',
+//       // );
+//       scriptPairs = await this.videoService.generateVideoScripts(
+//   prompt.trim(),
+//   videoDuration ?? '8s',
+//   voiceText || undefined,  
+//   resolvedNarrator,        
+//   audioType as 'voiceover' | 'narrator'
+// );
+//       this.logger.log(`✅ Script pairs built: ${scriptPairs.length} segment(s) for ${videoDuration ?? '8s'}`);
+//     } catch (scriptError: any) {
+//       this.logger.error(`Script build failed: ${scriptError.message}`);
+//       // Fallback — single segment with full voiceText
+//       scriptPairs = [{
+//   script:         prompt.trim(),
+//   voiceOver:      voiceOver || '',
+//   narrator:       '',
+//   narratorGender: resolvedNarrator,
+//   subtitleStart:  1.0,
+//   subtitleEnd:    6.5,
+//   isExtension:    false,
+//   isLast:         true,
+// }];
+
+//     }
+
+//     this.logger.log(`📋 Script pairs: ${JSON.stringify(scriptPairs)}`);
+// return {
+//   debug: true,
+//   scriptPairs,
+//   resolvedNarrator,
+//   burnSubtitles,
+//   voiceText,
+//   videoDuration: videoDuration ?? '8s',
+//   segmentCount: scriptPairs.length,
+// };
+
+//     // const payload = {
+//     //   userId: userId.trim(),
+//     //   scripts: scriptPairs.map((p) => p.script),
+//     //   scriptPairs,
+//     //   storyboard: prompt.trim(),
+//     //   videoRatio: aspectRatio?.trim() || '16:9',
+//     //   brandName: contentName?.trim()
+//     //     ? `${contentName.trim()}-freestyle`
+//     //     : 'video-generated',
+//     //   useLogo,
+//     //   logoUrl: logo?.trim() || '',
+//     //   useSlogan: false,
+//     //   slogan: '',
+//     //   burnSubtitles,
+//     //   voiceOverText: voiceText,         // ✅ full original voice text for reference
+//     //   language: 'English',
+//     //   videoDuration: videoDuration?.trim() || '8s',
+//     //   referenceImage: referenceImage || [],
+//     //   source: source?.trim() || 'freestyle',
+//     //   backgroundReference: '',
+//     //   cameraAngle: '',
+//     // };
+
+//     // const result = await this.videoService.queueVideoGeneration(userId, payload);
+//     // const duration = Date.now() - startTime;
+
+//     // this.logger.log(`✅ VIDEO freestyle queued - ${duration}ms - Job: ${result.jobId}`);
+
+//     // const estimatedTime =
+//     //   videoDuration === '30s' ? '8-10 minutes'
+//     //   : videoDuration === '15s' ? '4-5 minutes'
+//     //   : '2-3 minutes';
+
+//     // return this.buildSuccess({
+//     //   isPending: true,
+//     //   jobId: result.jobId,
+//     //   contentType: 'video',
+//     //   message: 'Video generation started',
+//     //   statusCheckUrl: `/video/job-status/${result.jobId}`,
+//     //   estimatedTime,
+//     //   remaining: result.remaining,
+//     //   details: {
+//     //     prompt: prompt.substring(0, 100),
+//     //     aspectRatio,
+//     //     scriptsGenerated: scriptPairs.length,
+//     //     audioType: audioType ?? 'none',
+//     //     hasVoiceOver: hasVoiceText,
+//     //     voiceGender: voiceGender ?? 'female',
+//     //     narratorCharacter: resolvedNarrator.split(',')[0], // e.g. "Sarah"
+//     //     hasSubtitle: burnSubtitles,
+//     //     videoDuration: videoDuration || '8s',
+//     //     referenceImageCount: referenceImage?.length || 0,
+//     //     hasLogo: useLogo,
+//     //     source: payload.source,
+//     //   },
+//     //   processingTime: `${duration}ms`,
+//     // });
+
+//   } catch (error) {
+//     this.handleError(error, `${body.contentType} freestyle`, {
+//       userId: body.userId,
+//       contentType: body.contentType,
+//     });
+//   }
+// }
 
 @Post('generate')
 @HttpCode(HttpStatus.ACCEPTED)
@@ -445,8 +743,9 @@ async generateContent(@Body() body: {
   prompt: string;
   aspectRatio: string;
   contentType: 'image' | 'video';
-  audioType?: 'none' | 'voiceover';
+  audioType?: 'none' | 'voiceover' | 'narrator';
   voiceOver?: string;
+  narrator?: string;
   voiceGender?: string;
   hasSubtitle?: boolean;
   videoDuration?: '8s' | '15s' | '30s';
@@ -459,13 +758,20 @@ async generateContent(@Body() body: {
   try {
     const {
       userId, contentName, prompt, aspectRatio,
-      contentType, audioType, voiceOver,
+      contentType, audioType, voiceOver, narrator,
       voiceGender, hasSubtitle,
       videoDuration, referenceImage, logo, source,
     } = body;
 
+    // ─── FIX #2: For narrator mode, narrator script IS the scene prompt ──────
+    // User leaves prompt empty and fills narrator field instead
+    const effectivePrompt = (audioType === 'narrator' && !prompt?.trim())
+      ? (narrator?.trim() ?? '')
+      : (prompt?.trim() ?? '');
+
+    // ─── FIX #1: Validate using effectivePrompt, not raw prompt ─────────────
     this.validateRequiredFields(
-      { userId, prompt: prompt?.trim(), contentType },
+      { userId, prompt: effectivePrompt, contentType },
       ['userId', 'prompt', 'contentType'],
     );
 
@@ -486,13 +792,13 @@ async generateContent(@Body() body: {
     const useLogo = Boolean(logo);
 
     this.logger.log(`🎨 ${contentType.toUpperCase()} freestyle - User: ${userId}`);
-    this.logger.log(` body payload - ${JSON.stringify(body)}`);
+     this.logger.log(` body payload - ${JSON.stringify(body)}`);
 
-    // ─── IMAGE ───────────────────────────────────────────────────────────────
+    // ── IMAGE ────────────────────────────────────────────────────────────────
     if (contentType === 'image') {
       const payload = {
         userId: userId.trim(),
-        storyboard: prompt.trim(),
+        storyboard: effectivePrompt,
         brandName: contentName?.trim()
           ? `${contentName.trim()}-freestyle`
           : 'image-generated',
@@ -520,7 +826,7 @@ async generateContent(@Body() body: {
         estimatedTime: '30-60 seconds',
         remaining: result.remaining,
         details: {
-          prompt: prompt.substring(0, 100),
+          prompt: effectivePrompt.substring(0, 100),
           aspectRatio,
           referenceImageCount: referenceImage?.length || 0,
           hasLogo: useLogo,
@@ -530,32 +836,60 @@ async generateContent(@Body() body: {
       });
     }
 
-    // ─── VIDEO ───────────────────────────────────────────────────────────────
-    // Backward-compat: if audioType not sent but voiceOver is, treat as voiceover
-    const voiceText = (audioType === 'voiceover' || (!audioType && voiceOver?.trim()))
-      ? (voiceOver?.trim() ?? '')
-      : '';
-    const hasVoiceText = Boolean(voiceText);
+    // ── VIDEO ────────────────────────────────────────────────────────────────
+
+    // Voice map
+    const narratorVoiceMap: Record<string, string> = {
+      female:       'Sarah, young adult female narrator, warm friendly tone, clear American accent, medium-high consistent pitch, smooth pacing, close-mic studio recording, professional advertisement voice',
+      male:         'James, adult male narrator, deep warm confident tone, natural American accent, low consistent pitch, steady pacing, close-mic studio recording, professional commercial voice',
+      old_lady:     'Eleanor, elderly female storyteller narrator, warm wise tone, gentle American accent, slightly higher pitch with soft tremble, slow thoughtful pacing, close-mic storytelling style',
+      old_man:      'George, elderly male narrator, rich gravelly authoritative tone, classic American accent, low pitch, slow deliberate pacing, close-mic documentary narration style',
+      teen_girl:    'Mia, teenage girl narrator, energetic playful tone, bright American accent, higher pitch, fast lively pacing, close-mic casual social media style voice',
+      teen_boy:     'Jake, teenage boy narrator, relaxed playful tone, youthful American accent, medium pitch, casual conversational pacing, close-mic vlog style voice',
+      professional: 'Alex, professional news anchor narrator, neutral polished tone, standard American broadcast accent, medium consistent pitch, precise pacing, studio broadcast recording style',
+      whispering:   'soft whisper narrator voice, intimate ASMR tone, neutral American accent, very low volume, slow gentle pacing with breath detail, ultra close-mic recording style',
+    };
+    const resolvedNarrator = audioType === 'narrator'
+  ? narratorVoiceMap['professional']  // Alex — neutral, polished, no gender bias
+  : narratorVoiceMap[voiceGender ?? 'female'] ?? narratorVoiceMap['female'];
+
+    const voiceText =
+      audioType === 'voiceover' ? (voiceOver?.trim() ?? '') :
+      audioType === 'narrator'  ? (narrator?.trim()  ?? '') :
+      '';
+
+    const hasVoiceText  = Boolean(voiceText) && audioType !== 'none';
     const burnSubtitles = hasVoiceText && Boolean(hasSubtitle);
 
-    this.logger.log(`🎙️ Voice: "${voiceText.substring(0, 50)}" | subtitle=${burnSubtitles}`);
+    // ─── FIX #4: Only pass valid audioType to generateVideoScripts ───────────
+    const resolvedAudioType = (audioType === 'voiceover' || audioType === 'narrator')
+      ? audioType
+      : undefined;
 
     let scriptPairs: ScriptVoPair[];
 
     try {
       scriptPairs = await this.videoService.generateVideoScripts(
-        prompt.trim(),
+        effectivePrompt,                  
         videoDuration ?? '8s',
-        voiceText || undefined,
+        voiceText || undefined,           
+        resolvedNarrator,
+        resolvedAudioType,                
       );
+
       this.logger.log(`✅ Script pairs built: ${scriptPairs.length} segment(s) for ${videoDuration ?? '8s'}`);
+
     } catch (scriptError: any) {
       this.logger.error(`Script build failed: ${scriptError.message}`);
       scriptPairs = [{
-        script:        prompt.trim(),
-        voiceOver:     voiceText,
-        subtitleStart: 1.0,
-        subtitleEnd:   6.5,
+        script:         effectivePrompt,
+        voiceOver:      audioType === 'voiceover' ? voiceText : '',
+        narrator:       audioType === 'narrator'  ? voiceText : '',
+        narratorGender: resolvedNarrator,
+        subtitleStart:  1.0,
+        subtitleEnd:    6.5,
+        isExtension:    false,
+        isLast:         true,
       }];
     }
 
@@ -565,7 +899,7 @@ async generateContent(@Body() body: {
       userId: userId.trim(),
       scripts: scriptPairs.map((p) => p.script),
       scriptPairs,
-      storyboard: prompt.trim(),
+      storyboard: effectivePrompt,
       videoRatio: aspectRatio?.trim() || '16:9',
       brandName: contentName?.trim()
         ? `${contentName.trim()}-freestyle`
@@ -589,6 +923,16 @@ async generateContent(@Body() body: {
 
     this.logger.log(`✅ VIDEO freestyle queued - ${duration}ms - Job: ${result.jobId}`);
 
+//     return {
+//   debug: true,
+//   scriptPairs,
+//   resolvedNarrator,
+//   burnSubtitles,
+//   voiceText,
+//   videoDuration: videoDuration ?? '8s',
+//   segmentCount: scriptPairs.length,
+// };
+
     const estimatedTime =
       videoDuration === '30s' ? '8-10 minutes' :
       videoDuration === '15s' ? '4-5 minutes'  :
@@ -604,12 +948,13 @@ async generateContent(@Body() body: {
       remaining: result.remaining,
       scriptPairs,
       details: {
-        prompt: prompt.substring(0, 100),
+        prompt: effectivePrompt.substring(0, 100),
         aspectRatio,
         scriptsGenerated: scriptPairs.length,
         audioType: audioType ?? 'none',
         hasVoiceOver: hasVoiceText,
         voiceGender: voiceGender ?? 'female',
+        narratorCharacter: resolvedNarrator.split(',')[0],
         hasSubtitle: burnSubtitles,
         videoDuration: videoDuration || '8s',
         referenceImageCount: referenceImage?.length || 0,
@@ -626,6 +971,8 @@ async generateContent(@Body() body: {
     });
   }
 }
+
+
 
 
   @Get('job-status/:jobId')
@@ -1071,6 +1418,33 @@ async fixCompletedJob(@Param('jobId') jobId: string) {
   return { success: true, message: `Job ${jobId} marked completed` };
 }
 
+@Post('enhance-prompt')
+@HttpCode(HttpStatus.OK)
+@ApiOperation({ summary: 'Enhance a prompt or voice script using AI' })
+async enhancePrompt(@Body() body: {
+  prompt: string;
+  type: 'image' | 'video' | 'voiceover' | 'narrator';
+  duration?: string; // ✅ e.g. '8s', '15s', '30s'
+}) {
+  if (!body.prompt?.trim()) {
+    throw new BadRequestException('Prompt is required');
+  }
+
+  const enhanced = await this.videoService.enhancePrompt(
+    body.prompt.trim(),
+    body.type ?? 'video',
+    body.duration, // ✅ pass through
+  );
+
+  return {
+    success: true,
+    enhanced,
+    original: body.prompt.trim(),
+  };
+}
+
+
+
 @Post('test-long-video')
 async testLongVideo(@Body() body: any) {
   const { scripts, deviceType, targetDuration } = body;
@@ -1083,44 +1457,22 @@ async testLongVideo(@Body() body: any) {
 
 
 @Post('test-generate-scripts')
-async testGenerateScripts(@Body() body: {
-  prompt: string;
-  videoDuration: '8s' | '15s' | '30s';
-  voiceOver?: string
+async testGenerateScripts(@Body() body: { 
+  prompt: string; 
+  videoDuration: '8s' | '15s' | '30s'; 
+  voiceOver?: string 
 }) {
   const scriptPairs = await this.videoService.generateVideoScripts(
     body.prompt,
     body.videoDuration,
     body.voiceOver
   );
-  return {
-    success: true,
-    count: scriptPairs.length,
-    scriptPairs,
-    scripts: scriptPairs.map(p => p.script),
+  return { 
+    success: true, 
+    count: scriptPairs.length, 
+    scriptPairs,                                    // ← show pairs not flat array
+    scripts: scriptPairs.map(p => p.script),        // ← for backward compat
   };
-}
-
-
-@Post('enhance-prompt')
-@ApiOperation({ summary: 'Enhance a prompt using AI' })
-@ApiResponse({ status: 200, description: 'Enhanced prompt returned' })
-async enhancePrompt(@Body() body: {
-  prompt: string;
-  type: 'image' | 'video' | 'voiceover';
-  duration?: string;
-}) {
-  const { prompt, type, duration } = body;
-
-  if (!prompt?.trim()) {
-    throw new BadRequestException('prompt is required');
-  }
-  if (!['image', 'video', 'voiceover'].includes(type)) {
-    throw new BadRequestException('type must be image, video, or voiceover');
-  }
-
-  const enhanced = await this.videoService.enhancePrompt(prompt.trim(), type, duration);
-  return { success: true, enhanced };
 }
 
 
