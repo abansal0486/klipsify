@@ -1738,7 +1738,7 @@ private normalizeAspectRatio(input: string): string {
           },
         }],
         parameters: {
-          durationSeconds: 8,
+          durationSeconds: 7,
           sampleCount: CONFIG.VIDEO.SAMPLE_COUNT,
           aspectRatio: deviceType,
           ...(CONFIG.GCP.OUTPUT_URI ? { storageUri: CONFIG.GCP.OUTPUT_URI } : {}),
@@ -1812,7 +1812,7 @@ private normalizeAspectRatio(input: string): string {
   ): Promise<any> {
 
     const BASE_DURATION = 8;
-    const EXTENSION_DURATION = 8;
+    const EXTENSION_DURATION = 7;
     const MAX_RETRIES = 2;
     const RETRY_WAIT_MS = 20000;
 
