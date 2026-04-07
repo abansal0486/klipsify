@@ -30,7 +30,7 @@ export default function ProductInput({ index, brand, updateField, onRemove }) {
       {/* header */}
       <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-100">
         <span className="flex items-center gap-2">
-          <span className="w-5 h-5 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 text-white text-[10px] font-extrabold flex items-center justify-center">
+          <span className="w-5 h-5 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 text-white text-[10px] font-bold flex items-center justify-center">
             {index + 1}
           </span>
           <span className="text-xs font-bold text-gray-500">Product {index + 1}</span>

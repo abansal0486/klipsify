@@ -36,7 +36,7 @@ function App() {
 
   return (
     <>
-      <ToastContainer position="top-right" autoClose={3000} />
+      <ToastContainer position="top-center" autoClose={1500} hideProgressBar={true} />
       <Routes>
         <Route path="/" element={<Home />} />
 

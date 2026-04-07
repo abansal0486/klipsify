@@ -44,12 +44,12 @@ const VerifyEmail = () => {
         <section className="h-screen overflow-hidden bg-[#F8FAFC]">
             <div className="w-full h-full flex items-center justify-center p-5">
                 <div className="bg-white w-full max-w-[480px] p-8 md:p-10 rounded-3xl shadow-xl border border-gray-100 flex flex-col items-center text-center">
-                    <h1 className="text-2xl md:text-[32px] font-playfair font-bold mb-4">Email Verification</h1>
+                    <h1 className="text-2xl md:text-[32px] font-montserrat font-bold mb-4">Email Verification</h1>
 
                     {status === "verifying" && (
                         <div className="flex flex-col items-center">
                             <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>
-                            <p className="text-gray-500 font-poppins">Verifying your email address, please wait...</p>
+                            <p className="text-gray-500 font-montserrat">Verifying your email address, please wait...</p>
                         </div>
                     )}
 
@@ -60,8 +60,8 @@ const VerifyEmail = () => {
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                                 </svg>
                             </div>
-                            <p className="text-green-600 font-medium mb-2 font-poppins">{message}</p>
-                            <p className="text-gray-500 text-sm mb-6 font-poppins">You will be redirected to the login page shortly.</p>
+                            <p className="text-green-600 font-medium mb-2 font-montserrat">{message}</p>
+                            <p className="text-gray-500 text-sm mb-6 font-montserrat">You will be redirected to the login page shortly.</p>
                             <Link to="/login" className="bg-black text-white px-6 py-2 rounded-full font-bold shadow-lg hover:bg-gray-800 transition-all">
                                 Go to Login
                             </Link>
@@ -75,7 +75,7 @@ const VerifyEmail = () => {
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                                 </svg>
                             </div>
-                            <p className="text-red-600 font-medium mb-6 font-poppins">{message}</p>
+                            <p className="text-red-600 font-medium mb-6 font-montserrat">{message}</p>
                             <Link to="/register" className="bg-black text-white px-6 py-2 rounded-full font-bold shadow-lg hover:bg-gray-800 transition-all">
                                 Try Registering Again
                             </Link>

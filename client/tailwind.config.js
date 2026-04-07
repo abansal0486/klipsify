@@ -9,8 +9,7 @@ module.exports = {
         '1140': '1140px',
       },
       fontFamily: {
-        playfair: ['"Playfair"', 'serif'],
-        poppins: ['"Poppins"', 'sans-serif'],
+        sans: ['"Montserrat"', 'sans-serif'],
         montserrat: ['"Montserrat"', 'sans-serif'],
       },
       animation: {
