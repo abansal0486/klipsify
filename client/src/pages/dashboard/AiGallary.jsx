@@ -4,7 +4,7 @@ import { fetchGallery, deleteMedia, pullJobs } from "../../redux/actions/imageVi
 import MediaCard from "../../components/MediaCard";
 import MediaPreview from "./MediaPreview";
 import api from "../../api/axios";
-import { FolderOpen, LayoutGrid, List, Download, Share2, Trash2, Play, ImageIcon, Loader2,Images, Video, Sparkles, LayoutGrid, List, Loader2, Trash2, Download, Play, Share2, FolderOpen, ImageIcon } from "lucide-react";
+import { ImageIcon,Images, Video, Sparkles, LayoutGrid, List, Loader2, Trash2, Download, Play, Share2, FolderOpen } from "lucide-react";
 
 
 
