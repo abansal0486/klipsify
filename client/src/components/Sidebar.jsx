@@ -1,4 +1,4 @@
-import { Home, Sparkles, Gem, Turntable, LogOut } from "lucide-react";
+import { Home, Sparkles, Gem, Turntable, LogOut, Globe } from "lucide-react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { logoutUser } from "../redux/actions/authAction";
@@ -21,6 +21,7 @@ export default function Sidebar() {
       <nav className="flex flex-col items-center gap-1 w-full px-3 flex-1">
         <SidebarItem to="/dashboard"              icon={<Home size={19} />}      label="Studio"  end />
         <SidebarItem to="/dashboard/gallery"      icon={<Sparkles size={19} />}  label="Gallery"     />
+        <SidebarItem to="/dashboard/ugc"          icon={<Globe size={19} />}     label="UGC"         />
         <SidebarItem to="/dashboard/brand"        icon={<Turntable size={19} />} label="Brand"       />
         <SidebarItem to="/dashboard/subscription" icon={<Gem size={19} />}       label="Upgrade"     />
       </nav>

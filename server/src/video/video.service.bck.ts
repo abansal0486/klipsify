@@ -874,7 +874,7 @@ async getJobStatus(userId: string, jobId: string) {
 
   private async convertUrlToBase64(url: string): Promise<string | null> {
     try {
-      const baseUrl = process.env.BASE_URL || "http://localhost:3000";
+      const baseUrl = process.env.BASE_URL || "http://localhost:3001";
       const fullUrl = url.startsWith("http") ? url : `${baseUrl}${url}`;
 
       const response = await axios.get(fullUrl, {

@@ -119,7 +119,7 @@ export class ImageProcessor {
       // Add logo if available
       if (options.useLogo && project.logoViewUrl) {
         try {
-          const API_URL = process.env.API_URL || 'http://localhost:3000';
+          const API_URL = process.env.API_URL || 'http://localhost:3001';
           const fullLogoUrl = project.logoViewUrl.startsWith('http')
             ? project.logoViewUrl
             : `${API_URL}/${project.logoViewUrl}`;

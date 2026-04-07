@@ -368,6 +368,9 @@ export const pullJobs = (userId) => async (dispatch, getState) => {
 
     for (const job of queue) {
 
+      // Skip already-completed jobs or jobs without a real jobId (e.g. avatar/Veo sync completions)
+      if (!job.jobId || job.jobId === 'undefined' || job.status === 'completed') continue;
+
       const { data } = await api.get(`/video/job-status/${job.jobId}?userId=${userId}`);
 
       // JOB COMPLETED

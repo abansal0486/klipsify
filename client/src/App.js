@@ -25,6 +25,7 @@ import UserProfile from "./pages/dashboard/UserProfile";
 import MediaPreview from "./pages/dashboard/MediaPreview";
 import BrandManager from "./pages/dashboard/BrandManager";
 import Subscription from "./pages/dashboard/Subscription";
+import UGCVideo from "./pages/dashboard/UGCVideo";
 
 function App() {
   const dispatch = useDispatch();
@@ -77,6 +78,7 @@ function App() {
         <Route path="profile" element={<UserProfile />} />
         <Route path="preview" element={<MediaPreview />} />
         <Route path="brand" element={<BrandManager />} />
+        <Route path="ugc" element={<UGCVideo />} />
 
         <Route path="subscription" element={<Subscription />} />
       </Route>

@@ -8,9 +8,11 @@ import { FilesController } from './files.controller';
 import { ImageProcessor } from './processors/image.processor';
 import { VideoProcessor } from './processors/video.processor';
 import { Gallery, GallerySchema } from "./schema/gallery.schema";
+import { UgcVideo, UgcVideoSchema } from "./schema/ugc-video.schema";
 import { VideoPrompt, VideoPromptSchema } from './schema/video-prompt.schema';
 import { User, UserSchema } from "src/users/schemas/user.schema";
 import { VideoProcessingService } from './video-processing.service';
+import { AvatarService } from './avatar.service';
 import { Subscription, SubscriptionSchema,  } from "src/subscriptions/schemas/subscription.schema";
 import { SubscriptionsModule } from "src/subscriptions/subscriptions.module";
 @Module({
@@ -19,6 +21,7 @@ import { SubscriptionsModule } from "src/subscriptions/subscriptions.module";
       { name: User.name, schema: UserSchema },
       { name: Subscription.name, schema: SubscriptionSchema },
       { name: Gallery.name, schema: GallerySchema },
+      { name: UgcVideo.name, schema: UgcVideoSchema },
       { name: VideoPrompt.name, schema: VideoPromptSchema },
     ]),
     
@@ -61,8 +64,9 @@ import { SubscriptionsModule } from "src/subscriptions/subscriptions.module";
     VideoService,
     ImageProcessor,
     VideoProcessor,
-    VideoProcessingService
+    VideoProcessingService,
+    AvatarService,
   ],
-  exports: [MongooseModule, VideoService, VideoProcessingService],
+  exports: [MongooseModule, VideoService, VideoProcessingService, AvatarService],
 })
 export class VideoModule { }
