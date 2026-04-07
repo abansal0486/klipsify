@@ -1,4 +1,4 @@
-import { Home, Sparkles, Gem, Turntable, LogOut, Globe, Award, LogOut,Images, Crown } from "lucide-react";
+import { Home, Globe, Award, LogOut,Images, Crown } from "lucide-react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { logoutUser } from "../redux/actions/authAction";
