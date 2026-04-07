@@ -90,11 +90,19 @@ const authReducer = (state = initialState, action) => {
       };
 
     case LOGIN_FAIL:
-    case LOAD_USER_FAIL:
       return {
         ...state,
         loading: false,
         error: action.payload,
+        isAuthenticated: false,
+        message: null,
+        user: null,
+      };
+    case LOAD_USER_FAIL:
+      return {
+        ...state,
+        loading: false,
+        error: null,
         isAuthenticated: false,
         message: null,
         user: null,

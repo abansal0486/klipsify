@@ -25,6 +25,7 @@ import mongoose from "mongoose";
 
 import { CreateVideoDto } from "./dto/video.dto";
 import { Gallery } from "./schema/gallery.schema";
+import { UgcVideo, UgcVideoDocument } from "./schema/ugc-video.schema";
 import { User, UserDocument } from "src/users/schemas/user.schema";
 import {Subscription, SubscriptionDocument} from "src/subscriptions/schemas/subscription.schema";
 
@@ -63,7 +64,7 @@ const CONFIG = {
     VALID_IMAGE_EXTS: ['png', 'jpeg', 'jpg', 'gif', 'webp', 'avif'],
     VALID_IMAGE_MIMES: ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif'],
     UNSUPPORTED_FORMATS: ['image/svg+xml', 'image/avif', 'image/x-icon'],
-    MAX_IMAGES: 5,
+    MAX_IMAGES: 20,
   },
   VIDEO: {
     DURATION: 8,
@@ -122,6 +123,7 @@ export class VideoService {
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     @InjectModel(Gallery.name) private readonly galleryModel: Model<Gallery>,
+    @InjectModel(UgcVideo.name) private readonly ugcVideoModel: Model<UgcVideoDocument>,
     @InjectModel(Subscription.name) private subscription: Model<SubscriptionDocument>,
     @InjectQueue('video-image-generation') private imageQueue: Queue,
     @InjectQueue('video-video-generation') private videoQueue: Queue,
@@ -874,7 +876,7 @@ async getJobStatus(userId: string, jobId: string) {
 
   private async convertUrlToBase64(url: string): Promise<string | null> {
     try {
-      const baseUrl = process.env.BASE_URL || "http://localhost:3000";
+      const baseUrl = process.env.BASE_URL || "http://localhost:3001";
       const fullUrl = url.startsWith("http") ? url : `${baseUrl}${url}`;
 
       const response = await axios.get(fullUrl, {
@@ -1311,7 +1313,8 @@ private normalizeAspectRatio(input: string): string {
       deviceType: string,
       logoImage?: string,
       referenceImages?: string[],
-      userId?: string
+      userId?: string,
+      durationSeconds?: number
     ): Promise<{ operationName: string; startTimestamp: number }> {
       let httpsAgent: https.Agent | null = null;
       
@@ -1414,7 +1417,7 @@ private normalizeAspectRatio(input: string): string {
             ...(Object.keys(imagePayload).length > 0 ? imagePayload : {})
           }],
           parameters: {
-            durationSeconds: CONFIG.VIDEO.DURATION,
+            durationSeconds: durationSeconds || CONFIG.VIDEO.DURATION,
             sampleCount: CONFIG.VIDEO.SAMPLE_COUNT,
             aspectRatio: deviceType,
             enhancePrompt: true,
@@ -3729,6 +3732,22 @@ SCHEMA
 
       await page.setDefaultTimeout(20000);
 
+      // Scroll to trigger lazy-load of images
+      await page.evaluate(async () => {
+        await new Promise<void>((resolve) => {
+          let totalHeight = 0;
+          const distance = 300;
+          const timer = setInterval(() => {
+            window.scrollBy(0, distance);
+            totalHeight += distance;
+            if (totalHeight >= document.body.scrollHeight) {
+              clearInterval(timer);
+              resolve();
+            }
+          }, 100);
+        });
+      });
+
       const structuredData = await page.evaluate(() => {
         const data: any = {
           meta: {},
@@ -3773,35 +3792,99 @@ SCHEMA
           }
         }
 
-        const imageSelectors = [
-          '.product-gallery img',
-          '.product-media img',
-          '[data-gallery] img',
-          '.product img',
-          'meta[property="og:image"]'
-        ];
-
         const imageSet = new Set<string>();
-        imageSelectors.forEach(selector => {
-          if (selector.includes('meta')) {
-            const metaImg = document.querySelector(selector);
-            if (metaImg) {
-              const imgUrl = metaImg.getAttribute("content");
-              if (imgUrl) imageSet.add(imgUrl);
-            }
-          } else {
-            document.querySelectorAll(selector).forEach((img: any) => {
-              const src = img.getAttribute("src") ||
-                img.getAttribute("data-src") ||
-                img.getAttribute("data-lazy-src");
-              if (src && !src.includes("favicon") && !src.includes("icon")) {
-                imageSet.add(src);
-              }
-            });
+
+        // ── Priority 1: og:image / twitter:image (most reliable product image)
+        ['og:image', 'twitter:image'].forEach(prop => {
+          const metaImg = document.querySelector(`meta[property="${prop}"], meta[name="${prop}"]`);
+          if (metaImg) {
+            const imgUrl = metaImg.getAttribute("content");
+            if (imgUrl) imageSet.add(imgUrl);
           }
         });
 
-        data.images = Array.from(imageSet).slice(0, 5);
+        // ── Priority 2: JSON-LD image fields
+        data.jsonLd.forEach((ld: any) => {
+          const candidates = [ld.image, ld.logo, ld.thumbnail];
+          candidates.forEach((val: any) => {
+            if (!val) return;
+            const urls = Array.isArray(val) ? val : [val];
+            urls.forEach((u: any) => {
+              const src = typeof u === 'string' ? u : u?.url;
+              if (src) imageSet.add(src);
+            });
+          });
+        });
+
+        // ── Priority 3: product/hero/content-specific containers
+        const productSelectors = [
+          // product galleries & media
+          '.product-gallery img', '.product-media img', '.product-images img',
+          '.product-image img', '.product__image img', '.product__media img',
+          '[data-gallery] img', '[data-product-gallery] img',
+          // hero / banner
+          '.hero img', '.hero-image img', '.banner img', '.hero-section img',
+          // main content area images (not sidebar/nav/footer)
+          'main img', 'article img', '#content img', '.content img',
+          '.main-content img', '[role="main"] img',
+          // common e-commerce patterns
+          '.swiper-slide img', '.carousel-item img', '.slick-slide img',
+          '.gallery-item img', '.media-gallery img',
+          // featured/cover images
+          '[class*="feature"] img', '[class*="cover"] img', '[class*="product"] img',
+        ];
+
+        const isJunkSrc = (src: string): boolean => {
+          if (!src || src.startsWith('data:') || src.trim().length === 0) return true;
+          const lower = src.toLowerCase();
+          return (
+            lower.includes('favicon') ||
+            lower.includes('/icon') ||
+            lower.includes('logo') ||
+            lower.includes('avatar') ||
+            lower.includes('placeholder') ||
+            lower.includes('spinner') ||
+            lower.includes('loading') ||
+            lower.includes('blank') ||
+            lower.includes('.svg') ||
+            lower.includes('1x1') ||
+            lower.includes('pixel') ||
+            lower.includes('tracking') ||
+            lower.includes('analytics')
+          );
+        };
+
+        const addImg = (src: string | null) => {
+          if (src && !isJunkSrc(src)) imageSet.add(src);
+        };
+
+        productSelectors.forEach(selector => {
+          document.querySelectorAll(selector).forEach((img: any) => {
+            addImg(
+              img.getAttribute("src") ||
+              img.getAttribute("data-src") ||
+              img.getAttribute("data-lazy-src") ||
+              img.getAttribute("data-original") ||
+              img.getAttribute("data-lazy")
+            );
+          });
+        });
+
+        // ── Priority 4: srcset from already-collected images (pick largest variant)
+        document.querySelectorAll('img[srcset]').forEach((img: any) => {
+          // Only process imgs inside product/main areas
+          const inMain = img.closest('main, article, #content, .content, [role="main"], .product, .hero, .banner, .gallery');
+          if (!inMain) return;
+          const srcset = img.getAttribute("srcset") || "";
+          // Pick the last (largest) srcset entry
+          const parts = srcset.split(",").map((p: string) => p.trim()).filter(Boolean);
+          if (parts.length) {
+            const url = parts[parts.length - 1].split(/\s+/)[0];
+            addImg(url);
+          }
+        });
+
+        data.images = Array.from(imageSet);
 
         const videoSet = new Set<string>();
         document.querySelectorAll("video source, video").forEach((video: any) => {
@@ -4162,6 +4245,89 @@ const completion = await this.client.chat.completions.create({
   }
 
   getOpenAIClient() {
-  return this.client; // already exists as private readonly client = new OpenAI(...)
-}
+    return this.client;
+  }
+
+  // ─── UGC Video persistence ────────────────────────────────────────────────
+  async saveUgcVideo(data: {
+    userId: string;
+    videoUrl: string;
+    gcsPath?: string;
+    thumbnailUrl?: string;
+    brandName?: string;
+    script?: string;
+    avatarId?: string;
+    avatarName?: string;
+    mode?: string;
+    aspectRatio?: string;
+    duration?: number;
+    referenceImages?: string[];
+  }): Promise<UgcVideoDocument> {
+    const doc = new this.ugcVideoModel({
+      userId:          data.userId,
+      videoUrl:        data.videoUrl,
+      gcsPath:         data.gcsPath || '',
+      thumbnailUrl:    data.thumbnailUrl || '',
+      brandName:       data.brandName || '',
+      script:          data.script || '',
+      avatarId:        data.avatarId || '',
+      avatarName:      data.avatarName || '',
+      mode:            data.mode || 'veo',
+      aspectRatio:     data.aspectRatio || '9:16',
+      duration:        data.duration || 0,
+      referenceImages: data.referenceImages || [],
+      isDeleted:       false,
+    });
+    return doc.save();
+  }
+
+  async getUgcVideos(userId: string): Promise<UgcVideoDocument[]> {
+    return this.ugcVideoModel
+      .find({ userId, isDeleted: false })
+      .sort({ createdAt: -1 })
+      .exec();
+  }
+
+  async deleteUgcVideo(userId: string, id: string): Promise<void> {
+    await this.ugcVideoModel.findOneAndUpdate(
+      { _id: id, userId },
+      { isDeleted: true },
+    );
+  }
+
+  // ─── Generate ad scripts via GPT ─────────────────────────────────────────
+  async generateScriptsWithAI(
+    systemPrompt: string,
+    userPrompt: string,
+    count: number,
+  ): Promise<Array<{ title: string; body: string }>> {
+    const response = await this.client.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user',   content: userPrompt   },
+      ],
+      temperature: 0.8,
+      max_tokens: 1200,
+      response_format: { type: 'json_object' },
+    });
+
+    const raw = response.choices[0]?.message?.content?.trim() ?? '';
+    if (!raw) throw new Error('OpenAI returned empty response');
+
+    let parsed: any;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throw new Error('OpenAI response was not valid JSON');
+    }
+
+    // Support both { scripts: [...] } and direct array
+    const arr: any[] = Array.isArray(parsed) ? parsed : (parsed.scripts ?? parsed.data ?? []);
+
+    return arr.slice(0, count).map((item: any) => ({
+      title: String(item.title || 'Script'),
+      body:  String(item.body || item.script || item.content || ''),
+    }));
+  }
 }

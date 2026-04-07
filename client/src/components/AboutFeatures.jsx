@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import img1 from "../assets/contentCreation.svg";
-import img2 from "../assets/youtubeNotes.jpg";
-import img3 from "../assets/marketing.jpg";
+import img2 from "../assets/youtubeNotes.png";
+import img3 from "../assets/marketing.png";
 import img4 from "../assets/storyTelling.svg";
 const AboutFeatures = () => {
   const slides = [
@@ -59,9 +59,9 @@ const AboutFeatures = () => {
     <div className="w-full flex flex-col items-center mt-[25px] mb-[25px] md:mt-[50px] md:mb-[50px] px-4 md:px-0 font-montserrat">
       {/* Carousel Container with Neo-Brutalism Bottom Border */}
       <h1 className="text-[18px] md:text-[38px] font-montserrat font-bold text-black leading-tight mb-[24px] text-center mx-auto xl:whitespace-nowrap">
-        What you can do with clipsify
+        What you can do with Klipsify
       </h1>
-      <div className="relative w-full max-w-[800px] md:max-w-none md:w-[1017px] group cursor-pointer">
+      <div className="relative w-full max-w-[95vw] lg:w-[1017px] group cursor-pointer">
         <div 
           className={`relative w-full overflow-hidden rounded-[32px] border border-gray-900 shadow-[0_10px_0_0_#111827] transition-all duration-300 transform group-hover:translate-y-[10px] group-hover:shadow-none`}
         >
@@ -72,7 +72,7 @@ const AboutFeatures = () => {
             {extendedSlides.map((slide, index) => (
               <div
                 key={index}
-                className={`w-full md:h-[410px] flex-shrink-0 flex flex-col-reverse md:flex-row items-center justify-center md:justify-between px-6 py-12 md:py-10 md:px-24 gap-8 md:gap-0 ${
+                className={`w-full md:h-[410px] flex-shrink-0 flex flex-col-reverse md:flex-row items-center justify-center md:justify-between px-6 py-12 md:py-10 lg:px-24 md:px-12 gap-8 md:gap-0 ${
                   index % 2 === 0 ? "bg-[#D6FFB3]" : "bg-[#FFF4B3]"
                 }`}
               >

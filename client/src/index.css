@@ -1,26 +1,12 @@
-@import url("https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Inter:wght@400;500;600;700&family=Playfair:ital,wght@0,300..900;1,300..900&display=swap");
-@import url("https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap");
 @import url("https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,100..900;1,100..900&display=swap");
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-body {
+html, body, button, input, textarea, select {
   margin: 0;
-  font-family:
-    "Inter",
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    "Roboto",
-    "Oxygen",
-    "Ubuntu",
-    "Cantarell",
-    "Fira Sans",
-    "Droid Sans",
-    "Helvetica Neue",
-    sans-serif;
+  font-family: "Montserrat", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -34,4 +20,87 @@ body {
 
 html {
   scroll-behavior: smooth;
+}
+
+/* ========================================================
+   MODERN REACT-TOASTIFY CSS OVERRIDES (KLIPSIFY THEME)
+   ======================================================== */
+.Toastify__toast-container {
+  z-index: 999999 !important;
+  width: 100% !important;
+  max-width: 400px !important;
+  padding: 16px !important;
+}
+
+@media (min-width: 481px) {
+  .Toastify__toast-container {
+    padding: 0 !important;
+  }
+}
+
+.Toastify__toast {
+  font-family: "Montserrat", sans-serif !important;
+  border-radius: 12px !important;
+  padding: 14px 18px !important;
+  box-shadow: 0 10px 30px -10px rgba(0,0,0,0.15) !important;
+  border: 1px solid rgba(255,255,255,0.4) !important;
+  backdrop-filter: blur(10px) !important;
+  font-weight: 500 !important;
+  font-size: 14px !important;
+  line-height: 1.4 !important;
+  color: #333 !important;
+  min-height: auto !important;
+  margin-bottom: 12px !important;
+}
+
+.Toastify__toast-body {
+  padding: 0 !important;
+  margin: 0 !important;
+  align-items: flex-start !important;
+  word-break: break-word !important;
+}
+
+.Toastify__toast-icon {
+  margin-top: 2px !important;
+  margin-right: 12px !important;
+  width: 20px !important;
+  height: 20px !important;
+}
+
+/* Individual Toast Colors */
+.Toastify__toast--success {
+  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%) !important;
+  border-color: #bbf7d0 !important;
+  color: #166534 !important;
+}
+
+.Toastify__toast--error {
+  background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%) !important;
+  border-color: #fecaca !important;
+  color: #991b1b !important;
+}
+
+.Toastify__toast--warning {
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%) !important;
+  border-color: #fde68a !important;
+  color: #92400e !important;
+}
+
+.Toastify__toast--info {
+  background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%) !important;
+  border-color: #ddd6fe !important;
+  color: #5b21b6 !important;
+}
+
+
+
+/* Custom Close Button */
+.Toastify__close-button {
+  color: inherit !important;
+  opacity: 0.5 !important;
+  padding: 2px !important;
+  align-self: center !important;
+}
+.Toastify__close-button:hover {
+  opacity: 1 !important;
 }

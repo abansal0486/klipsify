@@ -1,4 +1,4 @@
-import { Zap, Video, Image as ImageIcon, CheckCircle2, ArrowUpRight, Ban, Sparkles } from "lucide-react";
+import { Zap, Video, Image as ImageIcon, CheckCircle2, ArrowUpRight, CrownIcon, X } from "lucide-react";
 
 const Subscription = () => {
   return (
@@ -20,7 +20,7 @@ const Subscription = () => {
 
           {/* Plan name + badge */}
           <div className="flex flex-wrap items-center gap-2 mb-1.5">
-            <h2 className="text-2xl font-extrabold text-gray-900">Basic Plan</h2>
+            <h2 className="text-2xl font-bold text-gray-900">Basic Plan</h2>
             <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
               <CheckCircle2 size={10} />
               Active
@@ -49,7 +49,7 @@ const Subscription = () => {
         <div className="flex flex-col items-start sm:items-end gap-4 w-full sm:w-auto">
           <div className="text-left sm:text-right">
             <div className="flex items-baseline gap-1">
-              <span className="text-4xl font-extrabold text-gray-900">$10</span>
+              <span className="text-4xl font-bold text-gray-900">$10</span>
               <span className="text-sm text-gray-400">/month</span>
             </div>
             <p className="text-xs text-gray-400 mt-0.5">Billed monthly · Renews Feb 28</p>
@@ -63,14 +63,14 @@ const Subscription = () => {
               }}
               className="flex items-center justify-center gap-2 h-9 px-5 rounded-xl bg-gradient-to-r from-purple-600 to-pink-500 text-white text-xs font-bold shadow-md shadow-purple-200 hover:from-purple-500 hover:to-pink-400 transition-all"
             >
-              <Sparkles size={12} />
+              <CrownIcon size={15} />
               Upgrade Plan
               <ArrowUpRight size={12} />
             </button>
             <button
               className="flex items-center justify-center gap-2 h-9 px-5 rounded-xl border border-gray-200 bg-white text-xs font-semibold text-gray-500 hover:border-red-200 hover:text-red-500 hover:bg-red-50 transition-all"
             >
-              <Ban size={12} />
+              <X size={12} />
               Cancel
             </button>
           </div>

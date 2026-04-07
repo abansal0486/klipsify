@@ -16,7 +16,7 @@ const Success = () => {
     }, [navigate]);
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-[#F8F9FA] relative overflow-hidden font-poppins px-4">
+        <div className="min-h-screen flex items-center justify-center bg-[#F8F9FA] relative overflow-hidden font-montserrat px-4">
             {/* Background Decorative Elements */}
             <div className="absolute top-[-10%] right-[-10%] w-[400px] h-[400px] bg-[#E30BEB] opacity-5 blur-[120px] rounded-full"></div>
             <div className="absolute bottom-[-10%] left-[-10%] w-[400px] h-[400px] bg-[#1869CC] opacity-5 blur-[120px] rounded-full"></div>
@@ -31,7 +31,7 @@ const Success = () => {
                 </div>
 
                 {/* Text Content */}
-                <h1 className="text-3xl font-bold text-[#1A1842] mb-4 font-playfair">
+                <h1 className="text-3xl font-bold text-[#1A1842] mb-4 font-montserrat">
                     Payment Successful!
                 </h1>
                 <p className="text-[#64748B] text-lg mb-8 leading-relaxed">

@@ -8,9 +8,9 @@ import { toast } from "react-toastify";
 
 const Register = () => {
   const inputStyle =
-    "w-full p-2 font-poppins placeholder:text-[10px] border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white/50 backdrop-blur-sm transition-all duration-300 hover:border-blue-400 text-[12px]";
+    "w-full p-2 font-montserrat placeholder:text-[10px] border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white/50 backdrop-blur-sm transition-all duration-300 hover:border-blue-400 text-[12px]";
   const labelStyle =
-    "text-sm text-sm  text-black font-poppins flex justify-start mb-1";
+    "text-sm text-sm  text-black font-montserrat flex justify-start mb-1";
 
   const dispatch = useDispatch();
   const navigate = useNavigate();
@@ -68,7 +68,7 @@ const Register = () => {
         {/** left side */}
         <div className="w-full md:w-1/2 flex items-center justify-center p-5 md:p-6">
           <div className="bg-white w-full max-w-[480px] p-6 md:px-8 md:py-4 rounded-3xl shadow-xl border border-gray-100 flex flex-col">
-            <h1 className=" font-playfair text-lg md:text-2xl font-bold text-center mb-3">
+            <h1 className=" font-montserrat text-lg md:text-2xl font-bold text-center mb-3">
               Let's get started
             </h1>
 
@@ -160,17 +160,17 @@ const Register = () => {
               <button
                 type="submit"
                 disabled={loading}
-                className={`bg-black font-poppins text-white text-[13px] px-4 mt-5 py-2 rounded-full shadow-lg hover:bg-gray-800 transition-all active:scale-95 ${loading ? "opacity-50 cursor-not-allowed" : ""}`}
+                className={`bg-black font-montserrat text-white text-[13px] px-4 mt-5 py-2 rounded-full shadow-lg hover:bg-gray-800 transition-all active:scale-95 ${loading ? "opacity-50 cursor-not-allowed" : ""}`}
               >
                 {loading ? "Creating..." : "Start free"}
               </button>
             </form>
 
-            <button className="bg-white border font-poppins border-gray-300 text-black text-[13px] px-4 mt-4 py-2 rounded-full shadow-sm hover:shadow-md transition-all flex items-center justify-center gap-2 active:scale-95">
+            <button className="bg-white border font-montserrat border-gray-300 text-black text-[13px] px-4 mt-4 py-2 rounded-full shadow-sm hover:shadow-md transition-all flex items-center justify-center gap-2 active:scale-95">
               <img className="w-5 h-5" src={google} alt="Google" /> Continue
               with Google
             </button>
-            <p className="text-center text-gray-500 mt-3 font-poppins text-sm">
+            <p className="text-center text-gray-500 mt-3 font-montserrat text-sm">
               Already have an account?{" "}
               <Link to="/login" className="text-blue-600  hover:underline">
                 Log in

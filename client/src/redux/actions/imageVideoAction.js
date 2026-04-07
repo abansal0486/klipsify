@@ -300,7 +300,8 @@ export const uploadImage = async (file) => {
     return relative.startsWith("http") ? relative : `${API_URL}${relative}`;
   } catch (err) {
     console.error("uploadImage error:", err);
-    throw new Error(err?.message || "Upload failed");
+    const backendMessage = err.response?.data?.message;
+    throw new Error(backendMessage || err?.message || "Upload failed");
   }
 };
 
@@ -367,6 +368,9 @@ export const pullJobs = (userId) => async (dispatch, getState) => {
     let stillProcessing = [];
 
     for (const job of queue) {
+
+      // Skip already-completed jobs or jobs without a real jobId (e.g. avatar/Veo sync completions)
+      if (!job.jobId || job.jobId === 'undefined' || job.status === 'completed') continue;
 
       const { data } = await api.get(`/video/job-status/${job.jobId}?userId=${userId}`);
 

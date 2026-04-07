@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { toast } from "react-toastify";
 import { useDispatch, useSelector } from "react-redux";
-import { Sparkles, Plus, Turntable, Building2, Pencil } from "lucide-react";
+import { Plus, Turntable, Building2, Pencil, Award } from "lucide-react";
 
 import CreateBrandDrawer from "../../components/CreateBrandDrawer";
 import EditBrandDrawer from "../../components/EditBrandDrawer";
@@ -163,13 +163,13 @@ export default function BrandManager() {
           <div>
             <div className="flex items-center gap-2 mb-1">
               <div className="w-6 h-6 rounded-md bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-sm shadow-purple-200">
-                <Sparkles size={12} className="text-white" />
+                <Award size={15} className="text-white" />
               </div>
               <span className="text-xs font-bold text-purple-500 uppercase tracking-widest">
                 Brand Studio
               </span>
             </div>
-            <h1 className="text-2xl md:text-3xl font-extrabold text-gray-900 tracking-tight">
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight">
               My Brands
             </h1>
             <p className="text-sm text-gray-400 mt-1">
@@ -295,7 +295,7 @@ function BrandCard({ brand, onClick, onEdit }) {
 
       <div className="p-4">
         <div className="flex items-center gap-3 mb-3">
-          <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center text-white text-xs font-extrabold shadow-md flex-shrink-0 overflow-hidden`}>
+          <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center text-white text-xs font-bold shadow-md flex-shrink-0 overflow-hidden`}>
             {brand.logo
               ? <img src={brand.logo} alt="logo" className="w-full h-full object-contain p-0.5" />
               : initials
