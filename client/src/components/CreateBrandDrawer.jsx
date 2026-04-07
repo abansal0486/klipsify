@@ -64,7 +64,7 @@ export default function CreateBrandDrawer({ close, onCreate }) {
               <Sparkles size={16} className="text-white" />
             </div>
             <div>
-              <h2 className="text-base font-extrabold text-gray-900">Create Brand</h2>
+              <h2 className="text-base font-bold text-gray-900">Create Brand</h2>
               <p className="text-[11px] text-gray-400">Fill in your brand details below</p>
             </div>
           </div>

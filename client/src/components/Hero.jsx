@@ -8,7 +8,7 @@ import ytLogo from "../assets/logos_youtube-icon.svg";
 import liLogo from "../assets/linkedIn.svg";
 import xLogo from "../assets/miniInsta.svg";
 import aiIcon from "../assets/ai-icon.svg";
-const words = ["Growth", "Results"];
+const words = ["Growth", "Results","Content"];
 
 const DynamicWord = () => {
   const [currentWord, setCurrentWord] = React.useState("");
@@ -119,8 +119,7 @@ const Hero = () => {
   ];
 
   return (
-    <section className="relative w-full min-h-screen flex flex-col items-center md:mt-[100px] pt-10 pb-1 md:pb-1 overflow-hidden bg-[radial-gradient(circle_at_50%_85%,_rgba(168,85,247,0.25)_0%,_rgba(168,85,247,0.15)_25%,_rgba(255,255,255,0)_60%),linear-gradient(to_bottom,_#ffffff_50%,_rgba(255,255,255,0)_100%),linear-gradient(to_right,_#F8F7E9_0%,_#ffffff_50%,_#D4E6F3_100%)]">
-      {" "}
+    <section className="relative w-full min-h-auto flex flex-col items-center md:mt-[100px] pt-10 pb-1 md:pb-1 overflow-hidden bg-[radial-gradient(circle_at_50%_85%,_rgba(168,85,247,0.25)_0%,_rgba(168,85,247,0.15)_25%,_rgba(255,255,255,0)_60%),linear-gradient(to_bottom,_#ffffff_50%,_rgba(255,255,255,0)_100%),linear-gradient(to_right,_#F8F7E9_0%,_#ffffff_50%,_#D4E6F3_100%)]">
       {/* Subtle dot pattern background */}
       <div className="max-w-[1200px] w-full mx-auto px-6 relative z-10 flex flex-col items-center">
         <motion.div

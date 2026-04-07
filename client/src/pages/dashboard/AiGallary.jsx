@@ -1,11 +1,21 @@
-import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
+import  { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { fetchGallery, deleteMedia, pullJobs } from "../../redux/actions/imageVideoAction";
 import MediaCard from "../../components/MediaCard";
 import MediaPreview from "./MediaPreview";
-import { Images, Video, Sparkles, FolderOpen, LayoutGrid, List, Download, Share2, Trash2, Play, ImageIcon, Loader2 } from "lucide-react";
+import api from "../../api/axios";
+import { FolderOpen, LayoutGrid, List, Download, Share2, Trash2, Play, ImageIcon, Loader2,Images, Video, Sparkles, LayoutGrid, List, Loader2, Trash2, Download, Play, Share2, FolderOpen, ImageIcon } from "lucide-react";
+
+
 
 const PAGE_SIZE = 5;
+
+const API_BASE = process.env.REACT_APP_API_URL || "http://localhost:3002";
+function resolveVideoUrl(url) {
+  if (!url) return url;
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  return `${API_BASE}${url.startsWith("/") ? "" : "/"}${url}`;
+}
 
 export default function AIGallery() {
   const dispatch = useDispatch();
@@ -20,6 +30,7 @@ export default function AIGallery() {
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const sentinelRef = useRef(null);
 
+  // UGC Videos tab
   useEffect(() => { window.localStorage.setItem("lastActiveTab",   activeTab); }, [activeTab]);
   useEffect(() => { window.localStorage.setItem("galleryViewMode", viewMode);  }, [viewMode]);
 
@@ -31,6 +42,36 @@ export default function AIGallery() {
   const loading     = useSelector((state) => state.generation?.loading);
   const currentRole = useSelector((state) => state.auth?.user?.role);
   const userId      = useSelector((state) => state.auth?.user?.id);
+
+  // UGC Videos tab — declared after userId
+  const [ugcVideos, setUgcVideos]     = useState([]);
+  const [ugcLoading, setUgcLoading]   = useState(false);
+  const [ugcPreview, setUgcPreview]   = useState(null);
+  const [deletingUgc, setDeletingUgc] = useState(null);
+
+  const fetchUgcVideos = useCallback(async () => {
+    if (!userId) return;
+    setUgcLoading(true);
+    try {
+      const res = await api.get(`/video/ugc-videos?userId=${userId}`);
+      if (res.data?.success) setUgcVideos(res.data.data || []);
+    } catch { /* silent */ }
+    finally { setUgcLoading(false); }
+  }, [userId]);
+
+  const handleDeleteUgc = useCallback(async (id) => {
+    setDeletingUgc(id);
+    try {
+      await api.delete(`/video/ugc-videos/${id}?userId=${userId}`);
+      setUgcVideos((prev) => prev.filter((v) => v._id !== id));
+      if (ugcPreview?._id === id) setUgcPreview(null);
+    } catch { /* silent */ }
+    finally { setDeletingUgc(null); }
+  }, [userId, ugcPreview]);
+
+  useEffect(() => {
+    if (activeTab === "ugc") fetchUgcVideos();
+  }, [activeTab, fetchUgcVideos]);
 
   useEffect(() => {
     if (!currentRole || !userId) return;
@@ -91,24 +132,25 @@ export default function AIGallery() {
   const tabs = [
     { id: "images", label: "Images", icon: Images, count: imageCount },
     { id: "videos", label: "Videos", icon: Video,  count: videoCount },
+    { id: "ugc",    label: "UGC Videos", icon: Sparkles, count: ugcVideos.length },
   ];
 
   return (
     <div className="min-h-full text-gray-800">
 
       {/* ── HEADER ── */}
-      <div className="px-6 pt-8 pb-6">
+      <div className="px-4 md:px-6 pt-8 pb-6">
         <div className="flex items-start justify-between">
           <div>
             <div className="flex items-center gap-2 mb-1">
               <div className="w-6 h-6 rounded-md bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-sm shadow-purple-200">
-                <Sparkles size={12} className="text-white" />
+                <Images size={15} className="text-white" />
               </div>
               <span className="text-xs font-bold text-purple-500 uppercase tracking-widest">
                 Media Library
               </span>
             </div>
-            <h1 className="text-2xl md:text-3xl font-extrabold text-gray-900 tracking-tight">
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight">
               My Gallery
             </h1>
             <p className="text-sm text-gray-400 mt-1">
@@ -128,26 +170,30 @@ export default function AIGallery() {
               <Video size={13} className="text-pink-500" />
               <span className="text-xs font-bold text-pink-600">{videoCount} Videos</span>
             </div>
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-violet-50 border border-violet-200">
+              <Sparkles size={13} className="text-violet-500" />
+              <span className="text-xs font-bold text-violet-600">{ugcVideos.length} UGC</span>
+            </div>
           </div>
         </div>
 
         {/* ── TABS + VIEW TOGGLE ── */}
-        <div className="flex items-center justify-between mt-6">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6">
           {/* Tabs */}
-          <div className="flex items-center gap-1 p-1 bg-white border border-gray-200 rounded-xl shadow-sm w-fit">
+          <div className="flex items-center gap-1 p-1 bg-white border border-gray-200 rounded-xl shadow-sm w-full sm:w-fit">
             {tabs.map(({ id, label, icon: Icon, count }) => (
               <button
                 key={id}
                 onClick={() => setActiveTab(id)}
-                className={`relative flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all duration-200 ${
+                className={`relative flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all duration-200 ${
                   activeTab === id
                     ? "bg-gradient-to-r from-purple-600 to-pink-500 text-white shadow-md shadow-purple-200"
                     : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
                 }`}
               >
-                <Icon size={15} />
-                {label}
-                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                <Icon size={14} className="flex-shrink-0" />
+                <span className="truncate">{label}</span>
+                <span className={`text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
                   activeTab === id ? "bg-white/25 text-white" : "bg-gray-100 text-gray-500"
                 }`}>
                   {count}
@@ -156,40 +202,131 @@ export default function AIGallery() {
             ))}
           </div>
 
-          {/* View mode toggle */}
-          <div className="flex items-center gap-1 p-1 bg-white border border-gray-200 rounded-xl shadow-sm">
-            <button
-              onClick={() => setViewMode("grid")}
-              title="Grid view"
-              className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-200 ${
-                viewMode === "grid"
-                  ? "bg-gradient-to-br from-purple-600 to-pink-500 text-white shadow-sm"
-                  : "text-gray-400 hover:text-gray-700 hover:bg-gray-50"
-              }`}
-            >
-              <LayoutGrid size={15} />
-            </button>
-            <button
-              onClick={() => setViewMode("list")}
-              title="List view"
-              className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-200 ${
-                viewMode === "list"
-                  ? "bg-gradient-to-br from-purple-600 to-pink-500 text-white shadow-sm"
-                  : "text-gray-400 hover:text-gray-700 hover:bg-gray-50"
-              }`}
-            >
-              <List size={15} />
-            </button>
-          </div>
+          {/* View mode toggle — hidden on UGC tab */}
+          {activeTab !== "ugc" && (
+            <div className="flex items-center gap-1 p-1 bg-white border border-gray-200 rounded-xl shadow-sm">
+              <button
+                onClick={() => setViewMode("grid")}
+                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-200 ${
+                  viewMode === "grid"
+                    ? "bg-gradient-to-br from-purple-600 to-pink-500 text-white shadow-sm"
+                    : "text-gray-400 hover:text-gray-700 hover:bg-gray-50"
+                }`}
+              >
+                <LayoutGrid size={15} />
+              </button>
+              <button
+                onClick={() => setViewMode("list")}
+                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-200 ${
+                  viewMode === "list"
+                    ? "bg-gradient-to-br from-purple-600 to-pink-500 text-white shadow-sm"
+                    : "text-gray-400 hover:text-gray-700 hover:bg-gray-50"
+                }`}
+              >
+                <List size={15} />
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
       {/* ── DIVIDER ── */}
-      <div className="h-px bg-gradient-to-r from-transparent via-purple-200 to-transparent mx-6" />
+      <div className="h-px bg-gradient-to-r from-transparent via-purple-200 to-transparent mx-4 md:mx-6" />
 
       {/* ── CONTENT ── */}
       <div className="px-6 py-6">
-        {loading && allMedia.length === 0 ? (
+
+        {/* ── UGC VIDEOS TAB ── */}
+        {activeTab === "ugc" ? (
+          ugcLoading ? (
+            <div className="flex items-center justify-center py-20">
+              <Loader2 size={24} className="animate-spin text-violet-400" />
+            </div>
+          ) : ugcVideos.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 gap-4">
+              <div className="w-16 h-16 rounded-2xl bg-violet-50 border border-violet-100 flex items-center justify-center">
+                <Sparkles size={24} className="text-violet-300" />
+              </div>
+              <p className="text-gray-400 font-medium text-sm">No UGC videos yet</p>
+              <p className="text-gray-300 text-xs text-center max-w-xs">
+                Generate your first UGC video from the AI Video Ads page.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {ugcVideos.map((v) => (
+                  <UgcVideoCard
+                    key={v._id}
+                    video={v}
+                    isDeleting={deletingUgc === v._id}
+                    onPreview={() => setUgcPreview(v)}
+                    onDownload={() => window.open(resolveVideoUrl(v.videoUrl), "_blank")}
+                    onDelete={() => handleDeleteUgc(v._id)}
+                  />
+                ))}
+              </div>
+
+              {/* UGC preview modal */}
+              {ugcPreview && (
+                <div
+                  className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+                  onClick={() => setUgcPreview(null)}
+                >
+                  <div
+                    className="relative bg-gray-900 rounded-2xl overflow-hidden max-w-sm w-full shadow-2xl"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      onClick={() => setUgcPreview(null)}
+                      className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition"
+                    >
+                      ✕
+                    </button>
+                    <video
+                      src={resolveVideoUrl(ugcPreview.videoUrl)}
+                      controls
+                      autoPlay
+                      playsInline
+                      className="w-full max-h-[70vh] object-contain bg-black"
+                    />
+                    <div className="p-4 space-y-1">
+                      <p className="text-white font-bold text-sm truncate">
+                        {ugcPreview.brandName || "UGC Video"}
+                      </p>
+                      <p className="text-white/40 text-xs capitalize">
+                        {ugcPreview.avatarName} · {ugcPreview.aspectRatio} · {ugcPreview.mode}
+                      </p>
+                      {ugcPreview.script && (
+                        <p className="text-white/50 text-xs leading-relaxed line-clamp-3 mt-2">
+                          {ugcPreview.script}
+                        </p>
+                      )}
+                      <div className="flex gap-2 mt-3">
+                        <button
+                          onClick={() => window.open(resolveVideoUrl(ugcPreview.videoUrl), "_blank")}
+                          className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition"
+                        >
+                          <Download size={12} /> Download
+                        </button>
+                        <button
+                          onClick={() => navigator.clipboard.writeText(resolveVideoUrl(ugcPreview.videoUrl))}
+                          className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition"
+                        >
+                          Share
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          )
+        ) : loading && allMedia.length === 0 ? (
+
+      // <div className="px-4 md:px-6 py-6">
+      //   {loading && allMedia.length === 0 ? (
+
           viewMode === "grid" ? <SkeletonGrid /> : <SkeletonList />
         ) : filteredGallery.length === 0 ? (
           <EmptyState type={activeTab} />
@@ -207,7 +344,6 @@ export default function AIGallery() {
                 />
               ))}
             </div>
-            {/* Infinite scroll sentinel */}
             {hasMore && (
               <div ref={sentinelRef} className="flex justify-center items-center gap-2 py-8 text-gray-400 text-sm">
                 <Loader2 size={16} className="animate-spin text-purple-400" />
@@ -240,7 +376,7 @@ export default function AIGallery() {
         )}
       </div>
 
-      {/* ── PREVIEW MODAL ── */}
+      {/* ── IMAGE/VIDEO PREVIEW MODAL ── */}
       {previewItem && (
         <MediaPreview
           item={previewItem}
@@ -250,6 +386,83 @@ export default function AIGallery() {
           handleDownload={handleDownload}
         />
       )}
+    </div>
+  );
+}
+
+/* ── UGC Video Card ── */
+function UgcVideoCard({ video, isDeleting, onPreview, onDownload, onDelete }) {
+  const [hovered, setHovered] = useState(false);
+  const date = video.createdAt
+    ? new Date(video.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    : "";
+
+  return (
+    <div
+      className="group relative bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm hover:shadow-md hover:border-violet-200 transition-all duration-200"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {/* Video thumbnail / preview */}
+      <div
+        className="relative bg-gray-900 cursor-pointer"
+        style={{ aspectRatio: video.aspectRatio === "16:9" ? "16/9" : video.aspectRatio === "1:1" ? "1/1" : "9/16", maxHeight: 240 }}
+        onClick={onPreview}
+      >
+        <video
+          src={resolveVideoUrl(video.videoUrl)}
+          className="w-full h-full object-cover"
+          muted
+          playsInline
+          preload="metadata"
+        />
+        {/* Play overlay */}
+        <div className={`absolute inset-0 bg-black/40 flex items-center justify-center transition-opacity duration-200 ${hovered ? "opacity-100" : "opacity-0"}`}>
+          <div className="w-12 h-12 rounded-full bg-white/90 flex items-center justify-center shadow-lg">
+            <Play size={16} className="text-violet-600 fill-violet-600 ml-0.5" />
+          </div>
+        </div>
+        {/* Ratio badge */}
+        <div className="absolute top-2 left-2 bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+          {video.aspectRatio}
+        </div>
+        {/* Avatar badge */}
+        {video.avatarName && (
+          <div className="absolute top-2 right-2 bg-violet-600/90 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+            {video.avatarName}
+          </div>
+        )}
+      </div>
+
+      {/* Info */}
+      <div className="p-3 space-y-1">
+        <p className="text-sm font-bold text-gray-800 truncate">
+          {video.brandName || "UGC Video"}
+        </p>
+        {video.script && (
+          <p className="text-xs text-gray-400 line-clamp-2 leading-relaxed">
+            {video.script}
+          </p>
+        )}
+        <p className="text-[10px] text-gray-300">{date}</p>
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center gap-1 px-3 pb-3">
+        <button
+          onClick={onDownload}
+          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-violet-50 hover:bg-violet-100 text-violet-600 text-xs font-bold transition"
+        >
+          <Download size={11} /> Download
+        </button>
+        <button
+          onClick={onDelete}
+          disabled={isDeleting}
+          className="w-8 h-8 rounded-lg flex items-center justify-center bg-red-50 hover:bg-red-100 text-red-400 transition disabled:opacity-40"
+        >
+          {isDeleting ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
+        </button>
+      </div>
     </div>
   );
 }
@@ -270,7 +483,7 @@ function ListRow({ item, index, openPreview, handleDownload, handleShare, dispat
     : `Generated ${isVideo ? "video" : "image"}`;
 
   return (
-    <div className={`group relative flex items-center gap-4 px-4 py-3.5 bg-white border rounded-2xl
+    <div className={`group relative flex items-center gap-3 sm:gap-4 px-3 sm:px-4 py-3 sm:py-3.5 bg-white border rounded-2xl
       transition-all duration-200 overflow-hidden
       ${isProcessing
         ? "border-purple-100 shadow-sm"

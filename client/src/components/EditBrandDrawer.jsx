@@ -1,5 +1,4 @@
 import { useState, useRef } from "react";
-import React from "react";
 import { createPortal } from "react-dom";
 import ProductInput from "./ProductInput";
 import IndustryInput from "./IndustryInput";
@@ -66,7 +65,7 @@ export default function EditBrandDrawer({ brand: initialBrand, close, onUpdate, 
               <Pencil size={15} className="text-white" />
             </div>
             <div>
-              <h2 className="text-base font-extrabold text-gray-900">Edit Brand</h2>
+              <h2 className="text-base font-bold text-gray-900">Edit Brand</h2>
               <p className="text-[11px] text-gray-400">Update your brand details</p>
             </div>
           </div>

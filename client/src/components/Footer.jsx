@@ -11,10 +11,10 @@ const Footer = ({ onContactClick }) => {
             <div className="max-w-[1140px] mx-auto flex flex-col md:mt-[50px] items-center">
                 {/* Brand and Tagline */}
                 <div className="text-center mb-2">
-                    <h2 className="text-[20px] md:text-[30px] font-playfair font-bold mb-3 tracking-tight text-[#1A1A1A]">
+                    <h2 className="text-[20px] md:text-[30px] font-montserrat font-bold mb-3 tracking-tight text-[#1A1A1A]">
                         Klipsify
                     </h2>
-                    <p className="text-[#676767] text-[10px] md:text-[14px] max-w-[400px] mx-auto font-poppins leading-normal">
+                    <p className="text-[#676767] text-[10px] md:text-[14px] max-w-[400px] mx-auto font-montserrat leading-normal">
                         AI-powered social media automation for modern creators
                     </p>
                 </div>
@@ -39,7 +39,7 @@ const Footer = ({ onContactClick }) => {
                 </div>
 
                 {/* Bottom Bar */}
-                <div className="w-full font-poppins pt-2 flex flex-col md:flex-row justify-between items-center text-[10px] md:text-[14px] font-medium text-gray-500">
+                <div className="w-full font-montserrat pt-2 flex flex-col md:flex-row justify-between items-center text-[10px] md:text-[14px] font-medium text-gray-500">
                     <p className="mb-4 md:mb-0">
                         © 2026 MY BRAND. All rights reserved.
                     </p>

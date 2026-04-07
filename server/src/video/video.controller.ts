@@ -16,7 +16,8 @@ import {
   UsePipes,
   ValidationPipe,
   InternalServerErrorException,
-  HttpCode
+  HttpCode,
+  Delete,
 } from "@nestjs/common";
 import { memoryStorage } from "multer";
 import { VideoService, DomainInfo, ScriptVoPair } from "./video.service";
@@ -41,6 +42,7 @@ import {
 } from "@nestjs/swagger";
 import { Readable } from "stream";
 import { Throttle } from '@nestjs/throttler';
+import { AvatarService } from './avatar.service';
 const CONFIG = {
   FILES: {
     MAX_SIZE: 50 * 1024 * 1024,
@@ -112,7 +114,10 @@ export class VideoController {
   private readonly logger = new Logger(VideoController.name);
   private readonly isProduction: boolean;
 
-  constructor(private readonly videoService: VideoService) {
+  constructor(
+    private readonly videoService: VideoService,
+    private readonly avatarService: AvatarService,
+  ) {
     this.isProduction = process.env.NODE_ENV === 'production';
     this.validateEnvironment();
   }
@@ -975,6 +980,359 @@ async generateContent(@Body() body: {
 
 
 
+  // ─────────────────── UGC SCRAPE ───────────────────
+  @Post('scrape-url')
+  @ApiOperation({ summary: 'Scrape a URL and return brand/product data for the UGC wizard' })
+  async scrapeUrl(@Body() body: { userId: string; url: string }) {
+    try {
+      const { userId, url } = body;
+      if (!userId?.trim()) throw new BadRequestException('userId is required');
+      if (!url?.trim())    throw new BadRequestException('url is required');
+
+      const normalizedUrl = url.trim().startsWith('http') ? url.trim() : `https://${url.trim()}`;
+      this.logger.log(`🔍 UGC scrape - User: ${userId}, URL: ${normalizedUrl}`);
+
+      const domainInfo = await this.videoService.fetchDomainInfoUsingAssistantAPI(normalizedUrl, 'English', userId.trim());
+      return { success: true, data: domainInfo };
+    } catch (error: any) {
+      return { success: false, message: error.message || 'Failed to scrape URL' };
+    }
+  }
+
+  // ─────────────────── AVATAR: LIST ───────────────────
+  @Get('avatars')
+  @ApiOperation({ summary: 'List available HeyGen talking avatars' })
+  async listAvatars() {
+    try {
+      const avatars = await this.avatarService.listAvatars();
+      return { success: true, data: avatars };
+    } catch (error: any) {
+      return { success: false, message: error.message || 'Failed to fetch avatars', data: [] };
+    }
+  }
+
+  // ─────────────────── AVATAR: GENERATE TALKING VIDEO ───────────────────
+  @Post('generate-avatar-video')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({ summary: 'Generate a talking-avatar UGC video via HeyGen' })
+  async generateAvatarVideo(@Body() body: {
+    userId: string;
+    avatarId: string;
+    voiceId?: string;
+    voiceGender?: 'male' | 'female' | 'neutral';
+    script: string;            // full voiceover / product pitch
+    backgroundImageUrl?: string;
+    aspectRatio?: '16:9' | '9:16' | '1:1';
+    caption?: boolean;
+    brandName?: string;
+    description?: string;
+    duration?: number;
+    // after HeyGen done, merge product B-roll onto the avatar video
+    referenceImages?: string[];
+  }) {
+    try {
+      const {
+        userId, avatarId, voiceId, voiceGender = 'female',
+        script, backgroundImageUrl, aspectRatio = '9:16',
+        caption = false, brandName, description, duration,
+      } = body;
+
+      if (!userId?.trim())   throw new BadRequestException('userId is required');
+      if (!avatarId?.trim()) throw new BadRequestException('avatarId is required');
+      if (!script?.trim())   throw new BadRequestException('script is required');
+
+      const resolvedVoiceId = voiceId?.trim() || AvatarService.defaultVoiceId(voiceGender);
+
+      this.logger.log(`🎭 Avatar video - User: ${userId}, Avatar: ${avatarId}`);
+
+      const targetDuration = duration || 8;
+      const BASE_DURATION = 8;
+      const EXTENSION_DURATION = 7;
+      const segmentCount = targetDuration <= 8 ? 1 : 1 + Math.round((targetDuration - BASE_DURATION) / EXTENSION_DURATION);
+
+      // Step 1: Dispatch to HeyGen or Veo depending on avatar type
+      const avatarResult = await this.avatarService.generateAvatarVideo({
+        avatarId,
+        voiceId: resolvedVoiceId,
+        script: script.trim(),
+        backgroundImageUrl: backgroundImageUrl?.trim() || undefined,
+        referenceImages: body.referenceImages || [],
+        aspectRatio,
+        caption,
+        title: brandName ? `${brandName} — UGC Avatar` : 'UGC Avatar Video',
+        productName: brandName,
+        productDescription: description,
+        segmentCount,
+      });
+
+      if (avatarResult.mode === 'veo') {
+        // ── Veo presenter path: generate via Veo pipeline ────────────────────
+        this.logger.log(`🎬 Veo presenter path for avatar: ${avatarId}, duration: ${targetDuration}s, segments: ${segmentCount}`);
+
+        let videoUrl = '';
+        let gcsPath = '';
+        let finalDuration = 0;
+
+        if (targetDuration <= 8) {
+          // Single shot for 8s or less — use segment 0 prompt
+          const veoJob = await this.videoService.generateVideoUsingVeo3(
+            avatarResult.prompts[0],
+            aspectRatio,
+            undefined,
+            body.referenceImages || [],
+            userId,
+            targetDuration,
+          );
+          const veoResult = await this.videoService.pollUntilDone(
+            veoJob.operationName,
+            veoJob.startTimestamp,
+            {},
+          );
+          videoUrl = veoResult.downloadUrl || veoResult.viewUrl || veoResult.videoUrl || '';
+          gcsPath = veoResult.gcsPath || '';
+          finalDuration = veoResult.duration || targetDuration;
+        } else {
+          // Multi-segment extension — each segment gets its own unique prompt
+          const longResult = await this.videoService.testLongVideoFlow(
+            avatarResult.prompts,  // unique prompt per segment
+            aspectRatio,
+            targetDuration,
+            undefined,
+            body.referenceImages || [],
+          );
+          if (!longResult?.success) {
+            throw new Error(longResult?.error || 'Long video generation failed');
+          }
+          const gcs = longResult.finalGcsPath || '';
+          videoUrl = longResult.downloadUrl || `/video/test-download?filename=${encodeURIComponent(gcs)}`;
+          gcsPath = gcs;
+          finalDuration = typeof longResult.actualDuration === 'number'
+            ? longResult.actualDuration
+            : parseInt(longResult.actualDuration) || targetDuration;
+        }
+
+        this.logger.log(`✅ Veo avatar video done: ${videoUrl}`);
+
+        // Persist to UGC video collection
+        const veoAvatar = this.avatarService.getVeoAvatar(avatarId);
+        await this.videoService.saveUgcVideo({
+          userId,
+          videoUrl,
+          gcsPath,
+          thumbnailUrl:   '',
+          brandName:      brandName || '',
+          script:         script.trim(),
+          avatarId,
+          avatarName:     veoAvatar?.avatar_name || avatarId,
+          mode:           'veo',
+          aspectRatio,
+          duration:       finalDuration,
+          referenceImages: body.referenceImages || [],
+        });
+
+        return {
+          success: true,
+          videoUrl,
+          thumbnailUrl: '',
+          duration:     finalDuration,
+          mode:         'veo',
+        };
+
+      } else {
+        // ── HeyGen path: poll until rendering completes ───────────────────────
+        const result = await this.avatarService.pollUntilDone(avatarResult.videoId);
+
+        this.logger.log(`✅ HeyGen avatar video done: ${result.videoUrl}`);
+
+        await this.videoService.saveUgcVideo({
+          userId,
+          videoUrl:    result.videoUrl,
+          thumbnailUrl: result.thumbnailUrl || '',
+          brandName:   brandName || '',
+          script:      script.trim(),
+          avatarId,
+          avatarName:  avatarId,
+          mode:        'heygen',
+          aspectRatio,
+          duration:    result.duration || 0,
+          referenceImages: body.referenceImages || [],
+        });
+
+        return {
+          success: true,
+          videoUrl:     result.videoUrl,
+          thumbnailUrl: result.thumbnailUrl,
+          duration:     result.duration,
+          heygenVideoId: avatarResult.videoId,
+          mode:          'heygen',
+        };
+      }
+
+    } catch (error: any) {
+      this.logger.error(`Avatar video failed: ${error.message}`);
+      return { success: false, message: error.message || 'Avatar video generation failed' };
+    }
+  }
+
+  // ─────────────────── UGC VIDEO ───────────────────
+  @Post('generate-ugc')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({ summary: 'Generate UGC-style video from a URL' })
+  @ApiResponse({ status: 202, description: 'UGC video queued' })
+  async generateUGCVideo(@Body() body: {
+    userId: string;
+    // pre-reviewed data from frontend wizard
+    brandName?: string;
+    slogan?: string;
+    description?: string;
+    logoUrl?: string;
+    useLogo?: boolean;
+    referenceImages?: string[];
+    // video settings
+    aspectRatio?: string;
+    videoDuration?: '8s' | '15s' | '30s';
+    voiceGender?: string;
+    hasSubtitle?: boolean;
+    audioType?: 'voiceover' | 'narrator' | 'none';
+    // user-built scenes from wizard step 5
+    scenes?: Array<{ script: string; voiceOver?: string }>;
+  }) {
+    const startTime = Date.now();
+    try {
+      const {
+        userId, brandName, slogan, description, logoUrl, useLogo,
+        referenceImages, aspectRatio, videoDuration, voiceGender,
+        hasSubtitle, audioType, scenes,
+      } = body;
+
+      if (!userId?.trim()) throw new BadRequestException('userId is required');
+      if (!description?.trim() && !brandName?.trim()) throw new BadRequestException('description or brandName is required');
+
+      this.logger.log(`🎬 UGC generate - User: ${userId}, Brand: ${brandName}`);
+
+      const storyboard = [
+        brandName   ? `Brand: ${brandName}.`     : '',
+        slogan      ? `Tagline: "${slogan}".`     : '',
+        description ? `About: ${description}`    : '',
+      ].filter(Boolean).join(' ');
+
+      const resolvedAspectRatio = aspectRatio?.trim() || '16:9';
+      const resolvedDuration    = (videoDuration?.trim() || '15s') as '8s' | '15s' | '30s';
+      const resolvedAudioType   = (audioType === 'voiceover' || audioType === 'narrator') ? audioType : 'none';
+
+      const narratorVoiceMap: Record<string, string> = {
+        female: 'Sarah, young adult female narrator, warm friendly tone, clear American accent, medium-high consistent pitch, smooth pacing, close-mic studio recording, professional advertisement voice',
+        male:   'James, adult male narrator, deep warm confident tone, natural American accent, low consistent pitch, steady pacing, close-mic studio recording, professional commercial voice',
+      };
+      const resolvedNarrator = narratorVoiceMap[voiceGender ?? 'female'] ?? narratorVoiceMap['female'];
+
+      const sceneDurations: Record<string, number[]> = {
+        '8s':  [8],
+        '15s': [8, 7],
+        '30s': [8, 7, 7, 8],
+      };
+      const durations = sceneDurations[resolvedDuration] ?? [8, 7];
+
+      let scriptPairs: ScriptVoPair[] = [];
+
+      if (scenes?.length) {
+        // Use user-reviewed scenes directly — split voiceover across them if needed
+        const voChunks = description?.trim()
+          ? this.videoService['splitVoiceOver'](description.trim(), scenes.length)
+          : Array(scenes.length).fill('');
+
+        let cumTime = 0;
+        const hasAudio = resolvedAudioType !== 'none';
+        scriptPairs = scenes.map((scene, i) => {
+          const segDur = durations[i] ?? 7;
+          const subtitleStart = parseFloat((cumTime + 1.0).toFixed(2));
+          const subtitleEnd   = parseFloat((cumTime + segDur - 0.5).toFixed(2));
+          cumTime += segDur;
+          return {
+            script:         scene.script,
+            voiceOver:      hasAudio ? (scene.voiceOver || voChunks[i] || '') : '',
+            narrator:       '',
+            narratorGender: resolvedNarrator,
+            subtitleStart,
+            subtitleEnd,
+            isExtension:    i > 0,
+            isLast:         i === scenes.length - 1,
+          };
+        });
+      } else {
+        // Fallback: AI-generate scripts from storyboard
+        try {
+          const audioTypeForGen = resolvedAudioType === 'none' ? undefined : resolvedAudioType;
+          scriptPairs = await this.videoService.generateVideoScripts(
+            storyboard, resolvedDuration, description?.trim() || '',
+            resolvedNarrator, audioTypeForGen,
+          );
+          scriptPairs = scriptPairs.map((p) => ({
+            ...p,
+            narratorGender: resolvedNarrator,
+            voiceOver: resolvedAudioType === 'none' ? '' : p.voiceOver,
+            narrator:  resolvedAudioType === 'none' ? '' : p.narrator,
+          }));
+        } catch {
+          scriptPairs = [{
+            script: storyboard, voiceOver: resolvedAudioType !== 'none' ? (description?.trim() || '') : '',
+            narrator: '', narratorGender: resolvedNarrator,
+            subtitleStart: 1.0, subtitleEnd: 6.5, isExtension: false, isLast: true,
+          }];
+        }
+      }
+
+      // Queue the job
+      const videoPayload = {
+        userId:        userId.trim(),
+        storyboard,
+        scripts:       scriptPairs.map((p) => p.script),
+        scriptPairs,
+        brandName:     brandName?.trim() || 'ugc-video',
+        slogan:        slogan?.trim() || '',
+        useLogo:       Boolean(useLogo),
+        logoUrl:       logoUrl?.trim() || '',
+        useSlogan:     Boolean(slogan?.trim()),
+        burnSubtitles: Boolean(hasSubtitle),
+        voiceOverText: resolvedAudioType !== 'none' ? (description?.trim() || '') : '',
+        language:      'English',
+        videoDuration: resolvedDuration,
+        videoRatio:    resolvedAspectRatio,
+        voiceGender:   voiceGender?.trim() || 'female',
+        referenceImage: (referenceImages || []).slice(0, 3),
+        source:        'ugc',
+        backgroundReference: '',
+        cameraAngle:   '',
+      };
+
+      const result = await this.videoService.queueVideoGeneration(userId.trim(), videoPayload);
+      const elapsed = Date.now() - startTime;
+
+      this.logger.log(`✅ UGC queued - ${elapsed}ms - Job: ${result.jobId}`);
+
+      return this.buildSuccess({
+        isPending:      true,
+        jobId:          result.jobId,
+        contentType:    'video',
+        message:        'UGC video generation started',
+        statusCheckUrl: `/video/job-status/${result.jobId}`,
+        estimatedTime:  resolvedDuration === '30s' ? '8-10 minutes' : resolvedDuration === '15s' ? '4-5 minutes' : '2-3 minutes',
+        remaining:      result.remaining,
+        details: {
+          brandName,
+          scrapedImages: (referenceImages || []).length,
+          videoDuration: resolvedDuration,
+          aspectRatio:   resolvedAspectRatio,
+          scriptsGenerated: scriptPairs.length,
+        },
+        processingTime: `${elapsed}ms`,
+      });
+
+    } catch (error) {
+      this.handleError(error, 'UGC video generation', { userId: body.userId });
+    }
+  }
+
   @Get('job-status/:jobId')
   @Throttle({ default: { limit: 10, ttl: 60000 } })
   @ApiOperation({ summary: 'Check job status' })
@@ -1457,24 +1815,103 @@ async testLongVideo(@Body() body: any) {
 
 
 @Post('test-generate-scripts')
-async testGenerateScripts(@Body() body: { 
-  prompt: string; 
-  videoDuration: '8s' | '15s' | '30s'; 
-  voiceOver?: string 
+async testGenerateScripts(@Body() body: {
+  prompt: string;
+  videoDuration: '8s' | '15s' | '30s';
+  voiceOver?: string
 }) {
   const scriptPairs = await this.videoService.generateVideoScripts(
     body.prompt,
     body.videoDuration,
     body.voiceOver
   );
-  return { 
-    success: true, 
-    count: scriptPairs.length, 
-    scriptPairs,                                    // ← show pairs not flat array
-    scripts: scriptPairs.map(p => p.script),        // ← for backward compat
+  return {
+    success: true,
+    count: scriptPairs.length,
+    scriptPairs,
+    scripts: scriptPairs.map(p => p.script),
   };
 }
 
+// ─────────────────── UGC VIDEO GALLERY ───────────────────
+@Get('ugc-videos')
+@ApiOperation({ summary: 'Get UGC videos for a user' })
+async getUgcVideos(@Query('userId') userId: string) {
+  if (!userId) return { success: false, data: [] };
+  try {
+    const videos = await this.videoService.getUgcVideos(userId);
+    return { success: true, data: videos };
+  } catch (error: any) {
+    this.logger.error(`getUgcVideos failed: ${error.message}`);
+    return { success: false, data: [] };
+  }
+}
 
+@Delete('ugc-videos/:id')
+@ApiOperation({ summary: 'Soft-delete a UGC video' })
+async deleteUgcVideo(@Param('id') id: string, @Query('userId') userId: string) {
+  if (!userId || !id) return { success: false };
+  try {
+    await this.videoService.deleteUgcVideo(userId, id);
+    return { success: true };
+  } catch (error: any) {
+    this.logger.error(`deleteUgcVideo failed: ${error.message}`);
+    return { success: false };
+  }
+}
+
+// ─────────────────── SCRIPT GENERATION ───────────────────
+@Post('generate-scripts')
+@HttpCode(HttpStatus.OK)
+@ApiOperation({ summary: 'Generate multiple ad scripts for a product using AI' })
+async generateScripts(@Body() body: {
+  userId: string;
+  brandName?: string;
+  description?: string;
+  targetAudience?: string;
+  language?: string;
+  count?: number;
+  tone?: string;
+  scriptTitle?: string;
+}) {
+  try {
+    const {
+      brandName = '', description = '', targetAudience = '',
+      language = 'English', count = 4, tone, scriptTitle,
+    } = body;
+
+    if (!brandName.trim() && !description.trim()) {
+      return { success: false, message: 'Brand name or description is required', scripts: [] };
+    }
+
+    const toneInstruction = tone && tone !== 'Default tone'
+      ? `Write in a "${tone}" style.`
+      : 'Write in a natural, engaging style.';
+
+    const titlesHint = scriptTitle ? `Focus on the angle: "${scriptTitle}".` : '';
+
+    const systemPrompt = `You are an expert UGC video ad scriptwriter.
+Generate exactly ${count} short product ad scripts for a ${language} audience.
+Each script should be 3-5 sentences, punchy, and optimized for video ads.
+${toneInstruction}
+${titlesHint}
+Return a JSON object with a "scripts" key containing an array of exactly ${count} objects, each with "title" (2-4 word hook name) and "body" (the script text).
+Example: {"scripts":[{"title":"Hook Name","body":"Script text here..."}]}
+Only return valid JSON. No markdown, no extra text.`;
+
+    const userPrompt = [
+      brandName ? `Product: ${brandName}` : '',
+      description ? `Description: ${description.substring(0, 500)}` : '',
+      targetAudience ? `Target audience: ${targetAudience}` : '',
+    ].filter(Boolean).join('\n');
+
+    const response = await this.videoService.generateScriptsWithAI(systemPrompt, userPrompt, count);
+
+    return { success: true, scripts: response };
+  } catch (error: any) {
+    this.logger.error(`Script generation failed: ${error.message}`);
+    return { success: false, message: error.message || 'Script generation failed', scripts: [] };
+  }
+}
 
 }

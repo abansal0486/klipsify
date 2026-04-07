@@ -8,7 +8,7 @@ import { fetchPlans, createCheckoutSession } from "../redux/actions/paymentActio
 const Pricing = () => {
   const [selected, setSelected] = useState("monthly");
   const [expandedPlan, setExpandedPlan] = useState(null);
-  const { user } = useSelector((state) => state.auth);
+  const { user, isAuthenticated } = useSelector((state) => state.auth);
   const { plans: apiPlans } = useSelector((state) => state.payment);
   const dispatch = useDispatch();
   const navigate = useNavigate();
@@ -29,9 +29,7 @@ const Pricing = () => {
     }
 
     try {
-      // Extract priceId from prefetched apiPlans
       const interval = selected === "monthly" ? "MONTH" : "YEAR";
-      console.log("Searching for interval:", interval, "in apiPlans");
       const apiPlan = apiPlans.find(
         (ap) =>
           ap.displayName.toLowerCase() === plan.name.toLowerCase() &&
@@ -40,19 +38,18 @@ const Pricing = () => {
 
       const priceId = apiPlan?.stripePriceId;
 
+      if (!isAuthenticated) {
+        toast.info("Please register to continue with your chosen plan.");
+        navigate("/register", { state: { plan, selected, priceId } });
+        return;
+      }
+
       if (!priceId) {
         toast.error(`Stripe Price ID not found for ${plan.name} (${selected}).`);
         return;
       }
 
-      if (!user?.email) {
-        toast.info("Please sign up first to add your email for the session.");
-      }
-
-      const email = user?.email || "anonymous@example.com";
-      const userId = user?._id || user?.id || "";
-
-      dispatch(createCheckoutSession(priceId, email, userId));
+      dispatch(createCheckoutSession(priceId, user.email, user._id || user.id));
     } catch (error) {
       console.error("Stripe session error:", error);
       toast.error("Something went wrong. Please try again.");
@@ -77,7 +74,7 @@ const Pricing = () => {
       moreFeatures: [
         "2 team members",
         "512 MB media storage",
-        "10 AI credit per month",
+        `${selected === "monthly" ? "10" : "120"} AI credit per ${selected === "monthly" ? "month" : "year"}`,
         "AI chat assistant",
         "Custom scheduling rules",
         "Built upload & editing",
@@ -102,7 +99,7 @@ const Pricing = () => {
       moreFeatures: [
         "5 team members",
         "2 GB media storage",
-        "50 AI credit per month",
+        `${selected === "monthly" ? "50" : "600"} AI credit per ${selected === "monthly" ? "month" : "year"}`,
         "AI chat assistant",
         "Custom scheduling rules",
         "Built upload & editing",
@@ -127,7 +124,7 @@ const Pricing = () => {
       moreFeatures: [
         "10 team members",
         "10 GB media storage",
-        "200 AI credit per month",
+        `${selected === "monthly" ? "200" : "2400"} AI credit per ${selected === "monthly" ? "month" : "year"}`,
         "AI chat assistant",
         "Custom scheduling rules",
         "Built upload & editing",
@@ -150,9 +147,9 @@ const Pricing = () => {
           "linear-gradient(135deg, #fbc8d4 0%, #f5eef8 40%, #c9d8f9 100%)",
       }}
     >
-      <div className="max-w-[1100px] mx-auto px-6 md:px-20">
-        <div className="text-center space-y-4 md:mb-16  mb-10">
-          <h2 className="text-lg md:text-[38px] font-bold text-black tracking-wider">
+      <div className="max-w-[1100px] mx-auto px-6 lg:px-20  ">
+        <div className="text-center space-y-4  md:mb-16  mb-10">
+          <h2 className="text-lg lg:text-[38px] font-bold text-black tracking-wider">
             Flexible Plans for Every Creator
           </h2>
           <p className="text-xs md:text-[14px] text-gray-700 font-medium max-w-3xl mx-auto opacity-80">
@@ -186,8 +183,7 @@ const Pricing = () => {
         </div>
 
         <div className="bg-white/30 backdrop-blur-sm rounded-3xl p-4 md:p-8 mb-8 shadow-lg">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-10 items-start">
-            {allPlans.map((plan) => (
+<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8 items-stretch">            {allPlans.map((plan) => (
               <div
                 key={plan.name}
                 className={`rounded-2xl p-[2.5px] transition-all duration-500 group relative
@@ -233,7 +229,7 @@ const Pricing = () => {
                           ? plan.monthlyPrice
                           : plan.yearlyPrice}{" "}
                         <span className="text-[14px] md:text-[17px] font-light text-gray-400 group-hover:text-white/60">
-                          /month
+                          {selected === "monthly" ? "/month" : "/yearly"}
                         </span>
                       </div>
                       <h3
